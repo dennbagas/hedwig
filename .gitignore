@@ -1,0 +1,27 @@
+# Binaries
+/bin/
+*.exe
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Config with real credentials (keep config.example.yaml)
+config.yaml
+
+# Private keys
+*.pem
+*.key
+
+# Go build cache
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
