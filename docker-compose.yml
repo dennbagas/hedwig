@@ -1,0 +1,10 @@
+services:
+  hedwig:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./hedwig-bot.2026-07-09.private-key.pem:/Users/rizkipermana/btse/hedwig/hedwig-bot.2026-07-09.private-key.pem
+      - ./hedwig-dev.db:/Users/rizkipermana/btse/hedwig/hedwig-dev.db
+    restart: unless-stopped
