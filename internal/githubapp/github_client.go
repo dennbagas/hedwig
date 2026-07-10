@@ -61,6 +61,9 @@ func parsePRError(err error, owner, repo, head, base string) error {
 		return fmt.Errorf("repository %s/%s not found or no access", owner, repo)
 	case http.StatusUnprocessableEntity:
 		for _, e := range ghErr.Errors {
+			if e.Code == "custom" && e.Message != "" {
+				return fmt.Errorf("%s", e.Message)
+			}
 			switch e.Field {
 			case "head":
 				return fmt.Errorf("source branch %q not found in %s/%s", head, owner, repo)

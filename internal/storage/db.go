@@ -45,16 +45,23 @@ func runMigrations(db *sql.DB) error {
 		);
 
 		CREATE TABLE IF NOT EXISTS pr_sessions (
-			chat_id    INTEGER NOT NULL,
-			message_id INTEGER NOT NULL,
-			step       TEXT    NOT NULL,
-			repo       TEXT,
-			pr_title   TEXT,
-			pr_message TEXT,
-			status     TEXT    NOT NULL DEFAULT 'in_progress',
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			chat_id      INTEGER NOT NULL,
+			message_id   INTEGER NOT NULL,
+			step         TEXT    NOT NULL,
+			repo         TEXT,
+			pr_title     TEXT,
+			pr_message   TEXT,
+			status       TEXT    NOT NULL DEFAULT 'in_progress',
+			trigger_user TEXT,
+			updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (chat_id, message_id)
 		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add trigger_user column if it doesn't exist yet (for existing databases).
+	_, _ = db.Exec(`ALTER TABLE pr_sessions ADD COLUMN trigger_user TEXT`)
+	return nil
 }

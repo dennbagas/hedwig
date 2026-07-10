@@ -105,22 +105,22 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 
 func (r *sqliteRepository) UpsertPRSession(ctx context.Context, s PRSession) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO pr_sessions (chat_id, message_id, step, repo, pr_title, pr_message, status, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		s.ChatID, s.MessageID, string(s.Step), s.Repo, s.PRTitle, s.PRMessage, string(s.Status))
+		`INSERT OR REPLACE INTO pr_sessions (chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		s.ChatID, s.MessageID, string(s.Step), s.Repo, s.PRTitle, s.PRMessage, string(s.Status), s.TriggerUser)
 	return err
 }
 
 func (r *sqliteRepository) GetPRSession(ctx context.Context, chatID, messageID int64) (*PRSession, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, updated_at
+		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at
 		 FROM pr_sessions WHERE chat_id = ? AND message_id = ?`, chatID, messageID)
 	return scanSession(row)
 }
 
 func (r *sqliteRepository) GetActivePRSession(ctx context.Context, chatID int64) (*PRSession, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, updated_at
+		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at
 		 FROM pr_sessions WHERE chat_id = ? AND status = 'in_progress'
 		 ORDER BY updated_at DESC LIMIT 1`, chatID)
 	return scanSession(row)
@@ -184,7 +184,7 @@ func scanRetry(row *sql.Row) (*CICDRetry, error) {
 func scanSession(row *sql.Row) (*PRSession, error) {
 	var s PRSession
 	var step, status string
-	err := row.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.UpdatedAt)
+	err := row.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.TriggerUser, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -199,7 +199,7 @@ func scanSession(row *sql.Row) (*PRSession, error) {
 func scanSessionFromRows(rows *sql.Rows) (*PRSession, error) {
 	var s PRSession
 	var step, status string
-	if err := rows.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.UpdatedAt); err != nil {
+	if err := rows.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.TriggerUser, &s.UpdatedAt); err != nil {
 		return nil, err
 	}
 	s.Step = PRStep(step)

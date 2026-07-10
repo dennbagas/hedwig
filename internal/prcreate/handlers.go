@@ -13,11 +13,10 @@ const (
 	callbackFeature = "pr"
 	actionRepo      = "repo"
 	actionConfirm   = "confirm"
-	actionSkip      = "skip"
 	actionCancel    = "cancel"
 )
 
-func (h *Handler) handleStart(ctx context.Context, chatID int64) error {
+func (h *Handler) handleStart(ctx context.Context, chatID int64, triggeredBy string) error {
 	rows := make([][]telegrambot.Button, len(h.repos))
 	for i, r := range h.repos {
 		cb := telegrambot.EncodeCallback(callbackFeature, actionRepo, r.Owner+"/"+r.Name)
@@ -27,17 +26,18 @@ func (h *Handler) handleStart(ctx context.Context, chatID int64) error {
 	rows = append(rows, []telegrambot.Button{{Text: "Cancel", CallbackData: cancelCB}})
 
 	msgID, err := h.tg.SendMessage(ctx, chatID,
-		"Choose a repository for the new PR:",
+		fmt.Sprintf("Triggered by: %s\n\nChoose a repository for the new PR:", triggeredBy),
 		telegrambot.WithInlineKeyboard(rows))
 	if err != nil {
 		return fmt.Errorf("send repo selection: %w", err)
 	}
 
 	return h.store.UpsertPRSession(ctx, storage.PRSession{
-		ChatID:    chatID,
-		MessageID: msgID,
-		Step:      storage.PRStepSelectRepo,
-		Status:    storage.PRStatusInProgress,
+		ChatID:      chatID,
+		MessageID:   msgID,
+		Step:        storage.PRStepSelectRepo,
+		Status:      storage.PRStatusInProgress,
+		TriggerUser: triggeredBy,
 	})
 }
 
@@ -47,13 +47,9 @@ func (h *Handler) handleRepoSelected(ctx context.Context, session *storage.PRSes
 	if err := h.store.UpsertPRSession(ctx, *session); err != nil {
 		return err
 	}
-	cancelCB := telegrambot.EncodeCallback(callbackFeature, actionCancel, "0")
 	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
-		fmt.Sprintf("Repo: <b>%s</b>\n\nPlease type the PR title:", ownerRepo),
-		telegrambot.WithParseMode("HTML"),
-		telegrambot.WithInlineKeyboard([][]telegrambot.Button{
-			{{Text: "Cancel", CallbackData: cancelCB}},
-		}))
+		fmt.Sprintf("Triggered by: %s\n\nRepo: <b>%s</b>\n\nPlease type the PR title:", session.TriggerUser, ownerRepo),
+		telegrambot.WithParseMode("HTML"))
 }
 
 func (h *Handler) handleTitleEntered(ctx context.Context, session *storage.PRSession, title string) error {
@@ -62,13 +58,12 @@ func (h *Handler) handleTitleEntered(ctx context.Context, session *storage.PRSes
 	if err := h.store.UpsertPRSession(ctx, *session); err != nil {
 		return err
 	}
-	skipCB := telegrambot.EncodeCallback(callbackFeature, actionSkip, "0")
 	cancelCB := telegrambot.EncodeCallback(callbackFeature, actionCancel, "0")
 	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
-		fmt.Sprintf("Repo: <b>%s</b>\nTitle: <b>%s</b>\n\nPlease type the PR description (or skip):", session.Repo, title),
+		fmt.Sprintf("Triggered by: %s\n\nRepo: <b>%s</b>\nTitle: <b>%s</b>\n\nPlease type the PR description:", session.TriggerUser, session.Repo, title),
 		telegrambot.WithParseMode("HTML"),
 		telegrambot.WithInlineKeyboard([][]telegrambot.Button{
-			{{Text: "Skip", CallbackData: skipCB}, {Text: "Cancel", CallbackData: cancelCB}},
+			{{Text: "Cancel", CallbackData: cancelCB}},
 		}))
 }
 
@@ -81,8 +76,8 @@ func (h *Handler) handleMessageEntered(ctx context.Context, session *storage.PRS
 	confirmCB := telegrambot.EncodeCallback(callbackFeature, actionConfirm, "1")
 	cancelCB := telegrambot.EncodeCallback(callbackFeature, actionCancel, "0")
 	summary := fmt.Sprintf(
-		"<b>Summary</b>\nRepo: %s\nSource → Target: %s → %s\nTitle: %s\n\nDescription:\n%s",
-		session.Repo, h.sourceBranch, h.targetBranch, session.PRTitle, session.PRMessage)
+		"Triggered by: %s\n\n<b>Summary</b>\nRepo: %s\nSource → Target: %s → %s\nTitle: %s\n\nDescription:\n%s",
+		session.TriggerUser, session.Repo, h.sourceBranch, h.targetBranch, session.PRTitle, session.PRMessage)
 	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
 		summary,
 		telegrambot.WithParseMode("HTML"),
@@ -94,16 +89,16 @@ func (h *Handler) handleMessageEntered(ctx context.Context, session *storage.PRS
 		}))
 }
 
-func (h *Handler) handleConfirmed(ctx context.Context, session *storage.PRSession) error {
+func (h *Handler) handleConfirmed(ctx context.Context, session *storage.PRSession, triggeredBy string) error {
 	owner, repo := splitOwnerRepo(session.Repo)
 	prURL, err := h.github.CreatePR(ctx, owner, repo,
 		session.PRTitle, session.PRMessage, h.sourceBranch, h.targetBranch)
 	var text string
 	if err != nil {
-		text = fmt.Sprintf("Failed to create PR: %v", err)
-		h.logger.Error("create PR failed", zap.Error(err))
+		text = fmt.Sprintf("Triggered by: %s\n\nFailed to create PR: %v", session.TriggerUser, err)
+		h.logger.Error("create PR failed", zap.Error(err), zap.String("triggered_by", session.TriggerUser))
 	} else {
-		text = fmt.Sprintf("PR created: <a href=\"%s\">%s</a>", prURL, session.PRTitle)
+		text = fmt.Sprintf("Triggered by: %s\n\nPR created: <a href=\"%s\">%s</a>", session.TriggerUser, prURL, session.PRTitle)
 		session.Status = storage.PRStatusCompleted
 	}
 	session.Step = storage.PRStepDone
@@ -115,7 +110,8 @@ func (h *Handler) handleCancelled(ctx context.Context, session *storage.PRSessio
 	session.Step = storage.PRStepCancelled
 	session.Status = storage.PRStatusCancelled
 	_ = h.store.UpsertPRSession(ctx, *session)
-	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID, "PR creation cancelled.")
+	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
+		fmt.Sprintf("Triggered by: %s\n\nPR creation cancelled.", session.TriggerUser))
 }
 
 func splitOwnerRepo(ownerRepo string) (owner, repo string) {

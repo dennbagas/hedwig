@@ -75,7 +75,7 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 		}
 		return s.retryH.HandleCallback(ctx, cq.ID, chatID, messageID, retryID)
 	case "pr":
-		return s.prH.HandleCallback(ctx, cq.ID, chatID, messageID, action, payload)
+		return s.prH.HandleCallback(ctx, cq.ID, chatID, messageID, action, payload, telegramUserName(&cq.From))
 	default:
 		logger.Warn("unknown callback feature", zap.String("feature", feature))
 	}
@@ -87,15 +87,29 @@ func (s *Server) routeMessage(ctx context.Context, logger *zap.Logger, msg *mode
 	text := msg.Text
 
 	if strings.HasPrefix(text, "/newpr") {
-		return s.prH.HandleCommand(ctx, chatID)
+		return s.prH.HandleCommand(ctx, chatID, telegramUserName(msg.From))
 	}
 
 	if !strings.HasPrefix(text, "/") {
-		return s.prH.HandleTextMessage(ctx, chatID, text)
+		var replyToID int64
+		if msg.ReplyToMessage != nil {
+			replyToID = int64(msg.ReplyToMessage.ID)
+		}
+		return s.prH.HandleTextMessage(ctx, chatID, replyToID, text)
 	}
 
 	logger.Debug("unhandled command", zap.String("text", text))
 	return nil
+}
+
+func telegramUserName(u *models.User) string {
+	if u == nil {
+		return "unknown"
+	}
+	if u.Username != "" {
+		return "@" + u.Username
+	}
+	return u.FirstName
 }
 
 // extractChatAndMessageID returns the chat and message IDs from a MaybeInaccessibleMessage.

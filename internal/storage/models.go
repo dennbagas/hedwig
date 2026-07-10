@@ -41,12 +41,13 @@ const (
 )
 
 type PRSession struct {
-	ChatID    int64
-	MessageID int64
-	Step      PRStep
-	Repo      string
-	PRTitle   string
-	PRMessage string
-	Status    PRStatus
-	UpdatedAt time.Time
+	ChatID      int64
+	MessageID   int64
+	Step        PRStep
+	Repo        string
+	PRTitle     string
+	PRMessage   string
+	Status      PRStatus
+	TriggerUser string
+	UpdatedAt   time.Time
 }

@@ -9,12 +9,12 @@ import (
 )
 
 // HandleCommand handles the /newpr Telegram command.
-func (h *Handler) HandleCommand(ctx context.Context, chatID int64) error {
-	return h.handleStart(ctx, chatID)
+func (h *Handler) HandleCommand(ctx context.Context, chatID int64, triggeredBy string) error {
+	return h.handleStart(ctx, chatID, triggeredBy)
 }
 
 // HandleCallback routes an inline keyboard button tap for the PR creation flow.
-func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, chatID, messageID int64, action, payload string) error {
+func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, chatID, messageID int64, action, payload, triggeredBy string) error {
 	_ = h.tg.AnswerCallback(ctx, callbackQueryID, "")
 
 	if action == actionCancel {
@@ -39,17 +39,6 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		return h.handleRepoSelected(ctx, session, payload)
 	}
 
-	if action == actionSkip {
-		session, err := h.store.GetActivePRSession(ctx, chatID)
-		if err != nil {
-			return fmt.Errorf("get active pr session: %w", err)
-		}
-		if session == nil || session.Step != storage.PRStepEnterMessage {
-			return nil
-		}
-		return h.handleMessageEntered(ctx, session, "")
-	}
-
 	if action == actionConfirm {
 		session, err := h.store.GetPRSession(ctx, chatID, messageID)
 		if err != nil {
@@ -58,19 +47,23 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		if session == nil || session.Step != storage.PRStepConfirm {
 			return nil
 		}
-		return h.handleConfirmed(ctx, session)
+		return h.handleConfirmed(ctx, session, triggeredBy)
 	}
 
 	return nil
 }
 
 // HandleTextMessage routes free-text messages to the active PR session step.
-func (h *Handler) HandleTextMessage(ctx context.Context, chatID int64, text string) error {
+func (h *Handler) HandleTextMessage(ctx context.Context, chatID, replyToMessageID int64, text string) error {
 	session, err := h.store.GetActivePRSession(ctx, chatID)
 	if err != nil {
 		return fmt.Errorf("get active pr session: %w", err)
 	}
 	if session == nil {
+		return nil
+	}
+
+	if replyToMessageID != session.MessageID {
 		return nil
 	}
 
@@ -80,7 +73,6 @@ func (h *Handler) HandleTextMessage(ctx context.Context, chatID int64, text stri
 	case storage.PRStepEnterMessage:
 		return h.handleMessageEntered(ctx, session, text)
 	default:
-		// No action expected for other steps from a plain text message.
 		return nil
 	}
 }

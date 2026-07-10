@@ -30,7 +30,11 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "config.yaml", "path to config file")
+	defaultConfig := "config.yaml"
+	if v := os.Getenv("APP_CONFIG"); v != "" {
+		defaultConfig = v
+	}
+	configPath := flag.String("config", defaultConfig, "path to config file")
 	flag.Parse()
 
 	logger, err := logging.New()
