@@ -39,6 +39,17 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		return h.handleRepoSelected(ctx, session, payload)
 	}
 
+	if action == actionSkip {
+		session, err := h.store.GetActivePRSession(ctx, chatID)
+		if err != nil {
+			return fmt.Errorf("get active pr session: %w", err)
+		}
+		if session == nil || session.Step != storage.PRStepEnterMessage {
+			return nil
+		}
+		return h.handleMessageEntered(ctx, session, "")
+	}
+
 	if action == actionConfirm {
 		session, err := h.store.GetPRSession(ctx, chatID, messageID)
 		if err != nil {

@@ -32,7 +32,7 @@ docker build -t hedwig .
 
 ## Configuration
 
-Configuration is layered: YAML file first, then `APP_`-prefixed environment variables override on top. The mapping uses dot-notation → underscore: `github.webhook_secret` → `APP_GITHUB_WEBHOOK_SECRET`.
+Configuration is layered: YAML file first, then `APP_`-prefixed environment variables override on top. The mapping uses dot-notation → underscore: `github.webhook_secret` → `APP_GITHUB_WEBHOOK_SECRET`. Uses the `koanf` library; struct fields are tagged with `koanf:`.
 
 Copy `config.example.yaml` to `config.yaml` to get started. Secrets (`bot_token`, `webhook_secret`, `github.webhook_secret`) are intended to be set via env vars, not in the file. The GitHub App private key is a **file path** in config (never inline), parsed and validated at startup.
 
@@ -57,7 +57,9 @@ Telegram update → POST /webhooks/telegram
     → httpserver.handleTelegramWebhook
         → secret token validation
         → allowedUserIDs check (silently drops unknown users)
-        → routes to: retry.Handler.HandleCallback | prcreate.Handler (step dispatch)
+        → /newpr command   → prcreate.Handler.HandleCommand
+        → callback query   → retry.Handler.HandleCallback | prcreate.Handler.HandleCallback
+        → plain text       → prcreate.Handler.HandleTextMessage (fed to active session step)
 
 Background goroutines (30-minute interval):
     → retry.RunSweep  — expires pending CICDRetry rows older than 24h, strips buttons
@@ -69,11 +71,13 @@ Background goroutines (30-minute interval):
 | Package | Pattern |
 |---|---|
 | `notify/` | Strategy + registry: `Dispatcher` maps event type strings to `EventHandler` implementations. Add a new event by implementing `EventHandler` and calling `d.Register(...)` in `register.go`. |
-| `prcreate/` | FSM with transition table: each step is explicit (`select_repo`, `enter_title`, `enter_message`, `confirm`) and persisted in SQLite so pod restarts don't lose state. |
+| `prcreate/` | FSM with transition table: each step is explicit (`select_repo`, `enter_title`, `enter_message`, `confirm`) and persisted in SQLite so pod restarts don't lose state. Terminal states are `done` and `cancelled`. |
 | `retry/` | Explicit state machine: `pending → retried/expired`. State transitions go through `storage.UpdateRetryStatus`. |
 | `githubapp/`, `telegrambot/` | Adapter/interface: `githubapp.Client` and `telegrambot.Client` are thin interfaces over the real SDKs, making them swappable for test doubles. |
 | `storage/` | Repository pattern: `storage.Repository` interface hides SQLite; inject it to test feature logic without a real DB file. |
 | `main.go` | Manual constructor injection — the full dependency graph is wired in one place, no DI framework. |
+
+Logging uses `go.uber.org/zap`. A request-scoped logger is threaded through context via `logging.FromContext(ctx)` / the middleware in `httpserver/middleware.go`.
 
 ### Persistence (SQLite, WAL mode)
 
@@ -91,6 +95,8 @@ Deduplication relies on the primary key unique constraint (not check-then-insert
 2. Register it in `internal/notify/register.go` via `d.Register("event_type", &yourHandler{...})`.
 3. The event type string must match what `github.ParseWebHook` returns (e.g. `"push"`, `"workflow_run"`).
 
+Currently registered event types: `push`, `pull_request`, `create`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`.
+
 ### Callback data encoding
 
-`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`.
+`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string `hedwig:<feature>:<action>:<payload>` stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`; the `prcreate` package uses `feature="pr"` with actions `repo`, `confirm`, `skip`, `cancel`.

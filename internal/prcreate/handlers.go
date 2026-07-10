@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	callbackFeature   = "pr"
-	actionRepo        = "repo"
-	actionConfirm     = "confirm"
-	actionCancel      = "cancel"
+	callbackFeature = "pr"
+	actionRepo      = "repo"
+	actionConfirm   = "confirm"
+	actionSkip      = "skip"
+	actionCancel    = "cancel"
 )
 
 func (h *Handler) handleStart(ctx context.Context, chatID int64) error {
@@ -61,12 +62,13 @@ func (h *Handler) handleTitleEntered(ctx context.Context, session *storage.PRSes
 	if err := h.store.UpsertPRSession(ctx, *session); err != nil {
 		return err
 	}
+	skipCB := telegrambot.EncodeCallback(callbackFeature, actionSkip, "0")
 	cancelCB := telegrambot.EncodeCallback(callbackFeature, actionCancel, "0")
 	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
-		fmt.Sprintf("Repo: <b>%s</b>\nTitle: <b>%s</b>\n\nPlease type the PR description:", session.Repo, title),
+		fmt.Sprintf("Repo: <b>%s</b>\nTitle: <b>%s</b>\n\nPlease type the PR description (or skip):", session.Repo, title),
 		telegrambot.WithParseMode("HTML"),
 		telegrambot.WithInlineKeyboard([][]telegrambot.Button{
-			{{Text: "Cancel", CallbackData: cancelCB}},
+			{{Text: "Skip", CallbackData: skipCB}, {Text: "Cancel", CallbackData: cancelCB}},
 		}))
 }
 
