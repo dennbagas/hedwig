@@ -91,6 +91,7 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		h.logger.Warn("failed to update retry status to retried", zap.Error(err))
 	}
 
+	h.logger.Info("retry triggered", zap.Int64("retry_id", retryID), zap.Int64("run_id", rec.RunID), zap.String("repo", rec.Repo))
 	return h.tg.EditMessage(ctx, chatID, messageID, "Retrying failed jobs…")
 }
 

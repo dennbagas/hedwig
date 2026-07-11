@@ -3,6 +3,7 @@ package telegrambot
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -13,11 +14,19 @@ type telegramClient struct {
 }
 
 func New(token string) (Client, error) {
-	b, err := bot.New(token)
-	if err != nil {
-		return nil, fmt.Errorf("create telegram bot: %w", err)
+	var b *bot.Bot
+	var err error
+	delays := []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
+	for i, d := range delays {
+		b, err = bot.New(token)
+		if err == nil {
+			return &telegramClient{b: b}, nil
+		}
+		if i < len(delays)-1 {
+			time.Sleep(d)
+		}
 	}
-	return &telegramClient{b: b}, nil
+	return nil, fmt.Errorf("create telegram bot: %w", err)
 }
 
 func (c *telegramClient) SendMessage(ctx context.Context, chatID int64, text string, opts ...SendOption) (int64, error) {

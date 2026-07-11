@@ -100,6 +100,7 @@ func (h *Handler) handleConfirmed(ctx context.Context, session *storage.PRSessio
 	} else {
 		text = fmt.Sprintf("Triggered by: %s\n\nPR created: <a href=\"%s\">%s</a>", session.TriggerUser, prURL, session.PRTitle)
 		session.Status = storage.PRStatusCompleted
+		h.logger.Info("PR created", zap.String("repo", session.Repo), zap.String("title", session.PRTitle), zap.String("triggered_by", session.TriggerUser), zap.String("url", prURL))
 	}
 	session.Step = storage.PRStepDone
 	_ = h.store.UpsertPRSession(ctx, *session)
@@ -110,6 +111,7 @@ func (h *Handler) handleCancelled(ctx context.Context, session *storage.PRSessio
 	session.Step = storage.PRStepCancelled
 	session.Status = storage.PRStatusCancelled
 	_ = h.store.UpsertPRSession(ctx, *session)
+	h.logger.Info("PR creation cancelled", zap.String("repo", session.Repo), zap.String("triggered_by", session.TriggerUser))
 	return h.tg.EditMessage(ctx, session.ChatID, session.MessageID,
 		fmt.Sprintf("Triggered by: %s\n\nPR creation cancelled.", session.TriggerUser))
 }

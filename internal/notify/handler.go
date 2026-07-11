@@ -38,7 +38,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, eventType string, event inter
 		d.logger.Debug("no handler registered for event type", zap.String("event_type", eventType))
 		return nil
 	}
+	d.logger.Info("dispatching event", zap.String("event_type", eventType))
 	if err := h.Handle(ctx, event); err != nil {
+		d.logger.Error("handle event failed", zap.String("event_type", eventType), zap.Error(err))
 		return fmt.Errorf("handle event %s: %w", eventType, err)
 	}
 	return nil
