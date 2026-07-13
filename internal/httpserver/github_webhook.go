@@ -45,6 +45,17 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.notifyD.Dispatch(ctx, eventType, event); err != nil {
 		logger.Error("dispatch event", zap.Error(err), zap.String("event_type", eventType))
+		if deliveryID != "" {
+			// Un-record the delivery so a subsequent GitHub retry (triggered by
+			// the non-2xx response below) or a manual redelivery isn't skipped
+			// as a duplicate — otherwise a transient failure here would drop
+			// the notification permanently.
+			if delErr := s.store.DeleteDelivery(ctx, deliveryID); delErr != nil {
+				logger.Error("delete delivery record after dispatch failure", zap.Error(delErr))
+			}
+		}
+		http.Error(w, "dispatch failed", http.StatusInternalServerError)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

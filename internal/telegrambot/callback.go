@@ -7,6 +7,11 @@ import (
 
 const callbackPrefix = "hedwig"
 
+// MaxCallbackDataLen is Telegram's hard limit (in bytes) on inline keyboard
+// button callback_data; encoded callback data exceeding this is rejected by
+// the Bot API when the message/keyboard is sent.
+const MaxCallbackDataLen = 64
+
 // EncodeCallback encodes callback data in the format "hedwig:<feature>:<action>:<payload>".
 func EncodeCallback(feature, action, payload string) string {
 	return strings.Join([]string{callbackPrefix, feature, action, payload}, ":")

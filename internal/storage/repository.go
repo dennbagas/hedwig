@@ -7,6 +7,7 @@ import (
 
 type Repository interface {
 	RecordDelivery(ctx context.Context, deliveryID string) (isDuplicate bool, err error)
+	DeleteDelivery(ctx context.Context, deliveryID string) error
 	CleanOldDeliveries(ctx context.Context, olderThan time.Duration) error
 
 	CreateRetry(ctx context.Context, r CICDRetry) (id int64, err error)

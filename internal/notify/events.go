@@ -28,7 +28,7 @@ func (h *pushHandler) Handle(ctx context.Context, event interface{}) error {
 		summary = truncate(e.GetHeadCommit().GetMessage(), 80)
 	}
 	text := fmt.Sprintf("Push to <b>%s/%s</b> by <b>%s</b>\n%d commit(s)\n%s",
-		repo, ref, pusher, nCommits, summary)
+		esc(repo), esc(ref), esc(pusher), nCommits, esc(summary))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }
@@ -57,14 +57,14 @@ func (h *pullRequestHandler) Handle(ctx context.Context, event interface{}) erro
 	var text string
 	if action == "opened" {
 		text = fmt.Sprintf("PR opened: %s\nBy <b>%s</b>\n%s → %s\n%s",
-			htmlLink(title, url), author, head, base, url)
+			htmlLink(title, url), esc(author), esc(head), esc(base), esc(url))
 	} else {
 		merged := pr.GetMerged()
 		state := "closed without merge"
 		if merged {
 			state = "merged"
 		}
-		text = fmt.Sprintf("PR %s: %s\n%s", state, htmlLink(title, url), url)
+		text = fmt.Sprintf("PR %s: %s\n%s", state, htmlLink(title, url), esc(url))
 	}
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
@@ -90,7 +90,7 @@ func (h *createHandler) Handle(ctx context.Context, event interface{}) error {
 	pusher := e.GetSender().GetLogin()
 	url := fmt.Sprintf("https://github.com/%s/tree/%s", repo, ref)
 	text := fmt.Sprintf("%s created: %s in <b>%s</b> by <b>%s</b>\n%s",
-		capitalize(refType), ref, repo, pusher, htmlLink(ref, url))
+		capitalize(refType), esc(ref), esc(repo), esc(pusher), htmlLink(ref, url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }
@@ -99,7 +99,10 @@ func capitalize(s string) string {
 	if len(s) == 0 {
 		return s
 	}
-	return string(s[0]-32) + s[1:]
+	if s[0] >= 'a' && s[0] <= 'z' {
+		return string(s[0]-32) + s[1:]
+	}
+	return s
 }
 
 // issueCommentHandler handles PR comments posted via the issue_comment event.
@@ -124,7 +127,7 @@ func (h *issueCommentHandler) Handle(ctx context.Context, event interface{}) err
 	excerpt := truncate(e.GetComment().GetBody(), 120)
 	url := e.GetComment().GetHTMLURL()
 	text := fmt.Sprintf("Comment on PR <b>%s</b> by <b>%s</b>\n%s\n%s",
-		prTitle, commenter, excerpt, htmlLink("View comment", url))
+		esc(prTitle), esc(commenter), esc(excerpt), htmlLink("View comment", url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }
@@ -148,7 +151,7 @@ func (h *pullRequestReviewHandler) Handle(ctx context.Context, event interface{}
 	state := reviewStateLabel(e.GetReview().GetState())
 	url := e.GetReview().GetHTMLURL()
 	text := fmt.Sprintf("Review on PR <b>%s</b> by <b>%s</b>: %s\n%s",
-		prTitle, reviewer, state, htmlLink("View review", url))
+		esc(prTitle), esc(reviewer), esc(state), htmlLink("View review", url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }
@@ -174,7 +177,7 @@ func (h *pullRequestReviewCommentHandler) Handle(ctx context.Context, event inte
 	excerpt := truncate(e.GetComment().GetBody(), 120)
 	url := e.GetComment().GetHTMLURL()
 	text := fmt.Sprintf("Review comment on PR <b>%s</b> by <b>%s</b>\n%s:%d\n%s\n%s",
-		prTitle, commenter, file, line, excerpt, htmlLink("View comment", url))
+		esc(prTitle), esc(commenter), esc(file), line, esc(excerpt), htmlLink("View comment", url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }
@@ -198,7 +201,7 @@ func (h *workflowRunStartedHandler) Handle(ctx context.Context, event interface{
 	branch := e.GetWorkflowRun().GetHeadBranch()
 	url := e.GetWorkflowRun().GetHTMLURL()
 	text := fmt.Sprintf("CI/CD started: <b>%s</b>\n%s on %s\n%s",
-		name, repo, branch, htmlLink("View run", url))
+		esc(name), esc(repo), esc(branch), htmlLink("View run", url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }

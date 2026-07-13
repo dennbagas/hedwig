@@ -2,6 +2,7 @@ package notify
 
 import (
 	"fmt"
+	"html"
 	"strings"
 )
 
@@ -19,8 +20,14 @@ func shortRef(ref string) string {
 	return ref
 }
 
+// esc escapes text so it is safe to embed in a Telegram ParseMode=HTML message.
+func esc(s string) string {
+	return html.EscapeString(s)
+}
+
+// htmlLink builds an HTML anchor tag, escaping both the URL and the link text.
 func htmlLink(text, url string) string {
-	return fmt.Sprintf(`<a href="%s">%s</a>`, url, text)
+	return fmt.Sprintf(`<a href="%s">%s</a>`, esc(url), esc(text))
 }
 
 func reviewStateLabel(state string) string {

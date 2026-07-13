@@ -29,11 +29,11 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 	}
 
 	if action == actionRepo {
-		session, err := h.store.GetActivePRSession(ctx, chatID)
+		session, err := h.store.GetPRSession(ctx, chatID, messageID)
 		if err != nil {
-			return fmt.Errorf("get active pr session: %w", err)
+			return fmt.Errorf("get pr session: %w", err)
 		}
-		if session == nil {
+		if session == nil || session.Step != storage.PRStepSelectRepo {
 			return nil
 		}
 		return h.handleRepoSelected(ctx, session, payload)
