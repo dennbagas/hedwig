@@ -42,7 +42,7 @@ Validation runs at startup via `go-playground/validator` struct tags — the ser
 
 Hedwig bridges GitHub webhooks → Telegram notifications, with one additional feature: a CI/CD retry button. A single GitHub App identity and a single Telegram bot serve both features.
 
-A bulk PR-creation feature (driven by a Google Doc deployment checklist) is planned but not yet implemented — see `docs/plan/deploy-checklist-bulk-pr.md`.
+A bulk PR-creation feature (driven by a Google Doc deployment checklist) is planned but not yet implemented — see `docs/phase-2-pr-creation.md`.
 
 ### Request flow
 
