@@ -23,7 +23,12 @@ func Load(path string) (*Config, error) {
 	}
 
 	if err := k.Load(env.Provider("APP_", ".", func(s string) string {
-		return strings.ToLower(strings.TrimPrefix(s, "APP_"))
+		s = strings.ToLower(strings.TrimPrefix(s, "APP_"))
+		// Only the first underscore separates the top-level config section
+		// (server, github, telegram, pr, database) from the field path below
+		// it; field names themselves are snake_case and must keep their
+		// remaining underscores (e.g. "webhook_secret", "allowed_user_ids").
+		return strings.Replace(s, "_", ".", 1)
 	}), nil); err != nil {
 		return nil, fmt.Errorf("load env vars: %w", err)
 	}

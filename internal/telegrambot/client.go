@@ -9,19 +9,33 @@ type Button struct {
 	CallbackData string
 }
 
-type SendOption func(*sendParams)
+type SendOption func(*SendParams)
 
-type sendParams struct {
-	keyboard  [][]Button
-	parseMode string
+// SendParams is the decoded result of applying a set of SendOptions.
+// Exported so callers (including test fakes) can inspect what a
+// SendMessage/EditMessage call requested without needing access to
+// Telegram Bot API internals.
+type SendParams struct {
+	Keyboard  [][]Button
+	ParseMode string
 }
 
 func WithInlineKeyboard(rows [][]Button) SendOption {
-	return func(p *sendParams) { p.keyboard = rows }
+	return func(p *SendParams) { p.Keyboard = rows }
 }
 
 func WithParseMode(mode string) SendOption {
-	return func(p *sendParams) { p.parseMode = mode }
+	return func(p *SendParams) { p.ParseMode = mode }
+}
+
+// ApplyOptions applies opts to a fresh SendParams, defaulting ParseMode to
+// "HTML" (matching the default every real send/edit call uses).
+func ApplyOptions(opts ...SendOption) SendParams {
+	p := SendParams{ParseMode: "HTML"}
+	for _, o := range opts {
+		o(&p)
+	}
+	return p
 }
 
 type Client interface {

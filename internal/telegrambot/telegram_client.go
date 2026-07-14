@@ -30,14 +30,14 @@ func New(token string) (Client, error) {
 }
 
 func (c *telegramClient) SendMessage(ctx context.Context, chatID int64, text string, opts ...SendOption) (int64, error) {
-	p := applyOpts(opts)
+	p := ApplyOptions(opts...)
 	params := &bot.SendMessageParams{
 		ChatID:    chatID,
 		Text:      text,
-		ParseMode: models.ParseMode(p.parseMode),
+		ParseMode: models.ParseMode(p.ParseMode),
 	}
-	if len(p.keyboard) > 0 {
-		params.ReplyMarkup = buildKeyboard(p.keyboard)
+	if len(p.Keyboard) > 0 {
+		params.ReplyMarkup = buildKeyboard(p.Keyboard)
 	}
 	msg, err := c.b.SendMessage(ctx, params)
 	if err != nil {
@@ -47,15 +47,15 @@ func (c *telegramClient) SendMessage(ctx context.Context, chatID int64, text str
 }
 
 func (c *telegramClient) EditMessage(ctx context.Context, chatID, messageID int64, text string, opts ...SendOption) error {
-	p := applyOpts(opts)
+	p := ApplyOptions(opts...)
 	params := &bot.EditMessageTextParams{
 		ChatID:    chatID,
 		MessageID: int(messageID),
 		Text:      text,
-		ParseMode: models.ParseMode(p.parseMode),
+		ParseMode: models.ParseMode(p.ParseMode),
 	}
-	if len(p.keyboard) > 0 {
-		params.ReplyMarkup = buildKeyboard(p.keyboard)
+	if len(p.Keyboard) > 0 {
+		params.ReplyMarkup = buildKeyboard(p.Keyboard)
 	}
 	_, err := c.b.EditMessageText(ctx, params)
 	return err
@@ -84,14 +84,6 @@ func (c *telegramClient) SetWebhook(ctx context.Context, webhookURL, secretToken
 		SecretToken: secretToken,
 	})
 	return err
-}
-
-func applyOpts(opts []SendOption) *sendParams {
-	p := &sendParams{parseMode: string(models.ParseModeHTML)}
-	for _, o := range opts {
-		o(p)
-	}
-	return p
 }
 
 func buildKeyboard(rows [][]Button) *models.InlineKeyboardMarkup {
