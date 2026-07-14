@@ -1,4 +1,4 @@
-# Phase 1: Notifications & CI/CD Retry Bot
+# Phase 1 PRD: Notifications & CI/CD Retry Bot
 
 **Status: shipped** (this is what's currently implemented on `main`). See
 [`docs/phase-2-pr-creation.md`](phase-2-pr-creation.md) for the planned

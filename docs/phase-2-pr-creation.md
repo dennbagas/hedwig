@@ -1,4 +1,4 @@
-# Phase 2: PR Creation Bot
+# Phase 2 PRD: PR Creation Bot
 
 **Status: redesigned.** A first version (a Telegram wizard, "v1" below) was
 built and briefly shipped on `development` (`internal/prcreate/`), then
