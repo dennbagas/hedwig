@@ -99,4 +99,4 @@ Currently registered event types: `push`, `pull_request`, `create`, `issue_comme
 
 ### Callback data encoding
 
-`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string `hedwig:<feature>:<action>:<payload>` stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`; the `prcreate` package uses `feature="pr"` with actions `repo`, `confirm`, `skip`, `cancel`.
+`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string `hedwig:<feature>:<action>:<payload>` stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`; the `prcreate` package uses `feature="pr"` with actions `repo`, `confirm`, `cancel`.

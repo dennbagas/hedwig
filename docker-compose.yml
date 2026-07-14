@@ -5,7 +5,7 @@ services:
       - "8080:8080"
     volumes:
       - ./config.yaml:/app/config.yaml
-      - ./hedwig-bot.2026-07-09.private-key.pem:/app/github.pem
+      - ./hedwig-bot.private-key.pem:/etc/hedwig/github-app.pem
       - hedwig-data:/data
     restart: unless-stopped
 

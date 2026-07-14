@@ -25,6 +25,12 @@ func (r *sqliteRepository) RecordDelivery(ctx context.Context, deliveryID string
 	return n == 0, nil
 }
 
+func (r *sqliteRepository) DeleteDelivery(ctx context.Context, deliveryID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM webhook_deliveries WHERE delivery_id = ?`, deliveryID)
+	return err
+}
+
 func (r *sqliteRepository) CleanOldDeliveries(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 	_, err := r.db.ExecContext(ctx,

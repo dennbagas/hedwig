@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"fmt"
+	"html"
 	"strconv"
 
 	"github.com/btse/hedwig/internal/githubapp"
@@ -31,7 +32,7 @@ func New(store storage.Repository, tg telegrambot.Client, gh githubapp.Client, l
 // NotifyFailure sends the CI/CD failure message with a retry button and persists the retry record.
 func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName, owner, repo string, runID int64, runURL string) error {
 	text := fmt.Sprintf("CI/CD failed: <b>%s</b>\n%s/%s\n<a href=\"%s\">View run</a>",
-		workflowName, owner, repo, runURL)
+		html.EscapeString(workflowName), html.EscapeString(owner), html.EscapeString(repo), html.EscapeString(runURL))
 
 	// Send placeholder first to get the messageID, then we update with button.
 	msgID, err := h.tg.SendMessage(ctx, chatID, text, telegrambot.WithParseMode("HTML"))
@@ -82,8 +83,8 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 
 	if err := h.github.RerunFailedJobs(ctx, owner, repo, rec.RunID); err != nil {
 		h.logger.Error("rerun failed jobs API error", zap.Error(err), zap.Int64("run_id", rec.RunID))
-		text := fmt.Sprintf("Failed to retry: %v\n<a href=\"https://github.com/%s/actions/runs/%d\">Check on GitHub</a>",
-			err, rec.Repo, rec.RunID)
+		text := fmt.Sprintf("Failed to retry: %s\n<a href=\"https://github.com/%s/actions/runs/%d\">Check on GitHub</a>",
+			html.EscapeString(err.Error()), html.EscapeString(rec.Repo), rec.RunID)
 		return h.tg.EditMessage(ctx, chatID, messageID, text, telegrambot.WithParseMode("HTML"))
 	}
 

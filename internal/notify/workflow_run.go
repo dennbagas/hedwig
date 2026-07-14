@@ -28,7 +28,7 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event interface{}) erro
 		repo := e.GetRepo().GetFullName()
 		branch := e.GetWorkflowRun().GetHeadBranch()
 		url := e.GetWorkflowRun().GetHTMLURL()
-		text := "CI/CD started: <b>" + name + "</b>\n" + repo + " on " + branch + "\n" + htmlLink("View run", url)
+		text := "CI/CD started: <b>" + esc(name) + "</b>\n" + esc(repo) + " on " + esc(branch) + "\n" + htmlLink("View run", url)
 		_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 		return err
 
@@ -38,7 +38,7 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event interface{}) erro
 			name := e.GetWorkflowRun().GetName()
 			repo := e.GetRepo().GetFullName()
 			url := e.GetWorkflowRun().GetHTMLURL()
-			text := "CI/CD " + conclusion + ": <b>" + name + "</b>\n" + repo + "\n" + htmlLink("View run", url)
+			text := "CI/CD " + esc(conclusion) + ": <b>" + esc(name) + "</b>\n" + esc(repo) + "\n" + htmlLink("View run", url)
 			_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 			return err
 		}
