@@ -7,10 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/btse/hedwig/internal/logging"
-	"github.com/btse/hedwig/internal/prcreate"
 	"github.com/btse/hedwig/internal/telegrambot"
 	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
@@ -63,7 +61,7 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 	data := cq.Data
 	chatID, messageID := extractChatAndMessageID(&cq.Message)
 
-	feature, action, payload, err := telegrambot.DecodeCallback(data)
+	feature, _, payload, err := telegrambot.DecodeCallback(data)
 	if err != nil {
 		logger.Warn("decode callback data", zap.Error(err), zap.String("data", data))
 		return nil
@@ -76,8 +74,6 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 			return nil
 		}
 		return s.retryH.HandleCallback(ctx, cq.ID, chatID, messageID, retryID)
-	case "pr":
-		return s.prH.HandleCallback(ctx, cq.ID, chatID, messageID, action, payload, telegramUserName(&cq.From))
 	default:
 		logger.Warn("unknown callback feature", zap.String("feature", feature))
 	}
@@ -85,33 +81,8 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 }
 
 func (s *Server) routeMessage(ctx context.Context, logger *zap.Logger, msg *models.Message) error {
-	chatID := msg.Chat.ID
-	text := msg.Text
-
-	if strings.HasPrefix(text, "/newpr") {
-		return s.prH.HandleCommand(ctx, chatID, telegramUserName(msg.From))
-	}
-
-	if !strings.HasPrefix(text, "/") {
-		var replyToID int64
-		if msg.ReplyToMessage != nil {
-			replyToID = int64(msg.ReplyToMessage.ID)
-		}
-		return s.prH.HandleTextMessage(ctx, chatID, replyToID, text)
-	}
-
-	logger.Debug("unhandled command", zap.String("text", text))
+	logger.Debug("unhandled command", zap.String("text", msg.Text))
 	return nil
-}
-
-func telegramUserName(u *models.User) string {
-	if u == nil {
-		return "unknown"
-	}
-	if u.Username != "" {
-		return "@" + u.Username
-	}
-	return u.FirstName
 }
 
 // extractChatAndMessageID returns the chat and message IDs from a MaybeInaccessibleMessage.
@@ -127,6 +98,3 @@ func extractChatAndMessageID(m *models.MaybeInaccessibleMessage) (chatID, messag
 	}
 	return 0, 0
 }
-
-// Ensure prcreate is used (its IsFeatureCallback helper is available for callers).
-var _ = prcreate.IsFeatureCallback

@@ -15,7 +15,6 @@ import (
 	"github.com/btse/hedwig/internal/httpserver"
 	"github.com/btse/hedwig/internal/logging"
 	"github.com/btse/hedwig/internal/notify"
-	"github.com/btse/hedwig/internal/prcreate"
 	"github.com/btse/hedwig/internal/retry"
 	"github.com/btse/hedwig/internal/storage"
 	"github.com/btse/hedwig/internal/telegrambot"
@@ -75,13 +74,12 @@ func run() error {
 	}
 
 	retryH := retry.New(store, tg, gh, logger)
-	prH := prcreate.New(store, tg, gh, cfg.Repos, cfg.PR.SourceBranch, cfg.PR.TargetBranch, logger)
 
 	notifyD := notify.NewDispatcher(tg, cfg.Telegram.ChatID, logger)
 	notify.RegisterAll(notifyD, tg, retryH, cfg.Telegram.ChatID)
 
 	srv := httpserver.New(
-		gh, store, notifyD, retryH, prH,
+		gh, store, notifyD, retryH,
 		cfg.Telegram.AllowedUserIDs,
 		cfg.Telegram.WebhookSecret,
 		cfg.Server.HealthzPath,
@@ -90,7 +88,6 @@ func run() error {
 	)
 
 	go retry.RunSweep(ctx, store, tg, 30*time.Minute, 24*time.Hour, logger)
-	go prcreate.RunSweep(ctx, store, tg, 30*time.Minute, 24*time.Hour, logger)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	logger.Info("starting server", zap.String("addr", addr))

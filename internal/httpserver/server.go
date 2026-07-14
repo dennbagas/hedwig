@@ -5,7 +5,6 @@ import (
 
 	"github.com/btse/hedwig/internal/githubapp"
 	"github.com/btse/hedwig/internal/notify"
-	"github.com/btse/hedwig/internal/prcreate"
 	"github.com/btse/hedwig/internal/retry"
 	"github.com/btse/hedwig/internal/storage"
 	"go.uber.org/zap"
@@ -16,7 +15,6 @@ type Server struct {
 	store          storage.Repository
 	notifyD        *notify.Dispatcher
 	retryH         *retry.Handler
-	prH            *prcreate.Handler
 	allowedUserIDs []int64
 	telegramSecret string
 	logger         *zap.Logger
@@ -28,7 +26,6 @@ func New(
 	store storage.Repository,
 	notifyD *notify.Dispatcher,
 	retryH *retry.Handler,
-	prH *prcreate.Handler,
 	allowedUserIDs []int64,
 	telegramSecret string,
 	healthzPath string,
@@ -40,7 +37,6 @@ func New(
 		store:          store,
 		notifyD:        notifyD,
 		retryH:         retryH,
-		prH:            prH,
 		allowedUserIDs: allowedUserIDs,
 		telegramSecret: telegramSecret,
 		logger:         logger,

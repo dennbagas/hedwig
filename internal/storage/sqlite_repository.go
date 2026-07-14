@@ -109,70 +109,6 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	return retries, tx.Commit()
 }
 
-func (r *sqliteRepository) UpsertPRSession(ctx context.Context, s PRSession) error {
-	_, err := r.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO pr_sessions (chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		s.ChatID, s.MessageID, string(s.Step), s.Repo, s.PRTitle, s.PRMessage, string(s.Status), s.TriggerUser)
-	return err
-}
-
-func (r *sqliteRepository) GetPRSession(ctx context.Context, chatID, messageID int64) (*PRSession, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at
-		 FROM pr_sessions WHERE chat_id = ? AND message_id = ?`, chatID, messageID)
-	return scanSession(row)
-}
-
-func (r *sqliteRepository) GetActivePRSession(ctx context.Context, chatID int64) (*PRSession, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, trigger_user, updated_at
-		 FROM pr_sessions WHERE chat_id = ? AND status = 'in_progress'
-		 ORDER BY updated_at DESC LIMIT 1`, chatID)
-	return scanSession(row)
-}
-
-func (r *sqliteRepository) ExpireInProgressSessions(ctx context.Context, olderThan time.Duration) ([]PRSession, error) {
-	cutoff := time.Now().Add(-olderThan)
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	rows, err := tx.QueryContext(ctx,
-		`SELECT chat_id, message_id, step, repo, pr_title, pr_message, status, updated_at
-		 FROM pr_sessions WHERE status = 'in_progress' AND updated_at < ?`, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var sessions []PRSession
-	for rows.Next() {
-		s, err := scanSessionFromRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, *s)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(sessions) > 0 {
-		for _, s := range sessions {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE pr_sessions SET status = 'expired' WHERE chat_id = ? AND message_id = ?`,
-				s.ChatID, s.MessageID); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return sessions, tx.Commit()
-}
-
 func scanRetry(row *sql.Row) (*CICDRetry, error) {
 	var r CICDRetry
 	var status string
@@ -185,30 +121,4 @@ func scanRetry(row *sql.Row) (*CICDRetry, error) {
 	}
 	r.Status = RetryStatus(status)
 	return &r, nil
-}
-
-func scanSession(row *sql.Row) (*PRSession, error) {
-	var s PRSession
-	var step, status string
-	err := row.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.TriggerUser, &s.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("scan session: %w", err)
-	}
-	s.Step = PRStep(step)
-	s.Status = PRStatus(status)
-	return &s, nil
-}
-
-func scanSessionFromRows(rows *sql.Rows) (*PRSession, error) {
-	var s PRSession
-	var step, status string
-	if err := rows.Scan(&s.ChatID, &s.MessageID, &step, &s.Repo, &s.PRTitle, &s.PRMessage, &status, &s.TriggerUser, &s.UpdatedAt); err != nil {
-		return nil, err
-	}
-	s.Step = PRStep(step)
-	s.Status = PRStatus(status)
-	return &s, nil
 }

@@ -14,9 +14,4 @@ type Repository interface {
 	GetRetry(ctx context.Context, id int64) (*CICDRetry, error)
 	UpdateRetryStatus(ctx context.Context, id int64, status RetryStatus) error
 	ExpirePendingRetries(ctx context.Context, olderThan time.Duration) ([]CICDRetry, error)
-
-	UpsertPRSession(ctx context.Context, s PRSession) error
-	GetPRSession(ctx context.Context, chatID, messageID int64) (*PRSession, error)
-	GetActivePRSession(ctx context.Context, chatID int64) (*PRSession, error)
-	ExpireInProgressSessions(ctx context.Context, olderThan time.Duration) ([]PRSession, error)
 }

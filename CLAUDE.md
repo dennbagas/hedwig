@@ -40,7 +40,9 @@ Validation runs at startup via `go-playground/validator` struct tags — the ser
 
 ## Architecture
 
-Hedwig bridges GitHub webhooks → Telegram notifications, with two additional features: a CI/CD retry button and a Telegram-driven PR creation flow. A single GitHub App identity and a single Telegram bot serve all three features.
+Hedwig bridges GitHub webhooks → Telegram notifications, with one additional feature: a CI/CD retry button. A single GitHub App identity and a single Telegram bot serve both features.
+
+A bulk PR-creation feature (driven by a Google Doc deployment checklist) is planned but not yet implemented — see `docs/plan/deploy-checklist-bulk-pr.md`.
 
 ### Request flow
 
@@ -52,18 +54,16 @@ GitHub webhook → POST /webhooks/github
         → githubapp.ParseWebhook → typed event struct
         → notify.Dispatcher.Dispatch → per-event EventHandler
             (workflow_run failure → retry.Handler.NotifyFailure → stores CICDRetry, attaches button)
+        → on dispatch failure: storage.DeleteDelivery + non-2xx response, so GitHub retries
 
 Telegram update → POST /webhooks/telegram
     → httpserver.handleTelegramWebhook
-        → secret token validation
+        → secret token validation (constant-time compare)
         → allowedUserIDs check (silently drops unknown users)
-        → /newpr command   → prcreate.Handler.HandleCommand
-        → callback query   → retry.Handler.HandleCallback | prcreate.Handler.HandleCallback
-        → plain text       → prcreate.Handler.HandleTextMessage (fed to active session step)
+        → callback query   → retry.Handler.HandleCallback
 
-Background goroutines (30-minute interval):
+Background goroutine (30-minute interval):
     → retry.RunSweep  — expires pending CICDRetry rows older than 24h, strips buttons
-    → prcreate.RunSweep — expires in-progress PRSession rows older than 24h, strips keyboards
 ```
 
 ### Key design patterns
@@ -71,7 +71,6 @@ Background goroutines (30-minute interval):
 | Package | Pattern |
 |---|---|
 | `notify/` | Strategy + registry: `Dispatcher` maps event type strings to `EventHandler` implementations. Add a new event by implementing `EventHandler` and calling `d.Register(...)` in `register.go`. |
-| `prcreate/` | FSM with transition table: each step is explicit (`select_repo`, `enter_title`, `enter_message`, `confirm`) and persisted in SQLite so pod restarts don't lose state. Terminal states are `done` and `cancelled`. |
 | `retry/` | Explicit state machine: `pending → retried/expired`. State transitions go through `storage.UpdateRetryStatus`. |
 | `githubapp/`, `telegrambot/` | Adapter/interface: `githubapp.Client` and `telegrambot.Client` are thin interfaces over the real SDKs, making them swappable for test doubles. |
 | `storage/` | Repository pattern: `storage.Repository` interface hides SQLite; inject it to test feature logic without a real DB file. |
@@ -81,11 +80,10 @@ Logging uses `go.uber.org/zap`. A request-scoped logger is threaded through cont
 
 ### Persistence (SQLite, WAL mode)
 
-Three tables, all transient (no permanent history):
+Two tables, both transient (no permanent history):
 
 - `webhook_deliveries` — deduplicates GitHub webhook retries; cleaned periodically.
 - `cicd_retries` — one row per pending retry button; statuses: `pending → retried | expired`.
-- `pr_sessions` — one row per active PR creation flow; statuses: `in_progress → completed | cancelled | expired`. Primary key is `(chat_id, message_id)`.
 
 Deduplication relies on the primary key unique constraint (not check-then-insert) to avoid a race condition. If `RecordDelivery` returns `isDuplicate=true`, the handler returns `200 OK` to stop GitHub retrying but skips processing.
 
@@ -99,4 +97,4 @@ Currently registered event types: `push`, `pull_request`, `create`, `issue_comme
 
 ### Callback data encoding
 
-`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string `hedwig:<feature>:<action>:<payload>` stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`; the `prcreate` package uses `feature="pr"` with actions `repo`, `confirm`, `cancel`.
+`telegrambot.EncodeCallback(feature, action, payload)` produces the callback data string `hedwig:<feature>:<action>:<payload>` stored on inline buttons. The Telegram webhook handler decodes this to route to the right handler. The `retry` package uses `feature="retry"`, `action="trigger"`.

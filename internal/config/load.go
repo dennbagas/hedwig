@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/btse/hedwig/internal/telegrambot"
 	"github.com/go-playground/validator/v10"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
@@ -38,30 +37,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
-	if err := validateRepoCallbackDataLen(cfg.Repos); err != nil {
-		return nil, err
-	}
-
 	if _, err := loadPrivateKey(cfg.GitHub.PrivateKeyPath); err != nil {
 		return nil, fmt.Errorf("parse github private key: %w", err)
 	}
 
 	return &cfg, nil
-}
-
-// validateRepoCallbackDataLen fails fast if any configured repo's "owner/name"
-// would push the prcreate repo-selection callback data over Telegram's
-// hard 64-byte callback_data limit, which would otherwise only surface at
-// runtime as a rejected sendMessage/editMessageText call when /newpr is used.
-func validateRepoCallbackDataLen(repos []RepoConfig) error {
-	for _, r := range repos {
-		data := telegrambot.EncodeCallback("pr", "repo", r.Owner+"/"+r.Name)
-		if len(data) > telegrambot.MaxCallbackDataLen {
-			return fmt.Errorf("repo %s/%s: callback data too long (%d bytes, max %d)",
-				r.Owner, r.Name, len(data), telegrambot.MaxCallbackDataLen)
-		}
-	}
-	return nil
 }
 
 func loadPrivateKey(path string) (*rsa.PrivateKey, error) {

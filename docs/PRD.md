@@ -1,19 +1,20 @@
-# PRD: Hedwig — GitHub-Telegram Notification & PR Bot
+# PRD: Hedwig — GitHub-Telegram Notification Bot
 
 ## 1. Overview
 
-A service connecting GitHub and Telegram for two purposes:
+A service connecting GitHub and Telegram: relays GitHub repository events
+(push, PR opened/closed, CI/CD status) to Telegram, with a retry action for
+failed CI/CD runs. Uses one GitHub App identity, one Telegram bot, and one
+persistence layer.
 
-1. **Notifications** — relay GitHub repository events (push, PR opened/closed, CI/CD status) to Telegram, with a retry action for failed CI/CD runs.
-2. **PR creation bot** — a Telegram-driven, multi-step flow to open a pull request between a chosen source and target branch, for a chosen repository.
-
-Both features share one GitHub App identity, one Telegram bot, and one persistence layer.
+A bulk PR-creation feature (driven by a Google Doc deployment checklist) is
+planned but not yet implemented — see `docs/plan/deploy-checklist-bulk-pr.md`
+for its design. This PRD covers the notifications + CI/CD retry bot only.
 
 ## 2. Goals
 
 - Reduce time-to-notice for CI/CD failures and PR activity by pushing them into Telegram instead of requiring someone to check GitHub.
 - Allow retrying a failed CI/CD run directly from Telegram, without opening GitHub.
-- Allow creating a pull request from Telegram via a guided, cancellable, multi-step interaction.
 - Keep scope proportional to actual usage, so engineering effort matches problems that actually occur at current scale.
 
 ## 3. Non-Goals
@@ -28,8 +29,6 @@ Both features share one GitHub App identity, one Telegram bot, and one persisten
 - As an engineer, I want to receive a Telegram message when someone pushes to a repository, so I stay aware of activity without polling GitHub.
 - As an engineer, I want to receive a Telegram message when a PR is opened or closed, so I know when review is needed or a PR has landed.
 - As an engineer, I want to receive a Telegram message when a CI/CD run fails, with a button to retry the failed jobs, so I can recover from transient failures without leaving the chat.
-- As an engineer, I want to create a pull request by chatting with a Telegram bot (choosing repo, source branch, target branch), so I don't need to switch to GitHub or a terminal for routine PRs.
-- As an engineer, I want to cancel the PR-creation flow at any step, so a wrong or abandoned start doesn't leave me stuck.
 
 ## 5. Functional Requirements
 
@@ -48,6 +47,11 @@ Both features share one GitHub App identity, one Telegram bot, and one persisten
 | CI/CD started | `workflow_run` | `action == "requested"` | workflow name, repo, branch, link |
 | CI/CD status | `workflow_run` | `action == "completed"` | workflow name, repo, conclusion (success/failure/cancelled), link; **retry button attached only on failure** |
 
+All dynamic content embedded in these HTML-parse-mode messages (commit
+messages, PR titles/bodies, comment excerpts, branch/tag names, usernames) is
+HTML-escaped before being sent, so `<`/`>`/`&` in GitHub-supplied content can't
+break message delivery or inject markup into the Telegram message.
+
 ### 5.2 CI/CD Retry Button
 
 - **Single button only**: "Retry failed jobs" — calls `POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs`.
@@ -63,26 +67,11 @@ Both features share one GitHub App identity, one Telegram bot, and one persisten
 - Each retry button is valid for **24 hours** from the failure notification.
 - **Expiry is enforced by a periodic background sweep** (e.g. every 30 minutes): it finds `pending` records older than 24 hours, strips their keyboards, and marks them `expired`.
 
-### 5.3 PR Creation Bot
+### 5.3 Access Control
 
-Multi-step Telegram conversation:
-
-1. User invokes the bot (command or button).
-2. Bot presents repository choices from a statically configured list.
-3. Bot asks the user to enter the PR title.
-4. Bot asks the user to enter the PR message/details.
-5. Bot presents a confirmation step summarizing repo, title, message, and the source/target branches (source and target branches are statically configured and identical across all repos, so no per-repo branch mapping is needed — no branch selection by the user).
-6. On confirm: bot calls the GitHub API to create the PR, then edits the message to show the result (success + PR link, or error) and removes the keyboard.
-7. **Cancel is available at every step** — cancelling clears the session and removes the keyboard immediately.
-8. **Sessions expire after 24 hours** of inactivity, using the same expiry window and sweep mechanism as CI/CD retry buttons (see 5.2.1). An abandoned mid-flow session has its keyboard stripped and is marked `expired` by the same periodic sweep.
-
-Each step's inline keyboard is replaced/edited in place rather than sent as a new message, so the chat doesn't fill up with stale keyboards from earlier steps.
-
-### 5.4 Access Control
-
-- Only Telegram users on a **statically configured allowlist of user IDs** (numeric, stable Telegram identifiers — not usernames, which can change) may invoke bot commands or tap inline keyboard buttons (retry, PR-creation steps).
+- Only Telegram users on a **statically configured allowlist of user IDs** (numeric, stable Telegram identifiers — not usernames, which can change) may invoke bot commands or tap inline keyboard buttons (the retry button).
 - The allowlist lives in the same static configuration file as the repository list (Section 7.2), so no separate config mechanism is needed.
-- Enforcement happens once, in a single shared check in `telegrambot/`, applied before any update is dispatched to `notify/`, `retry/`, or `prcreate/` — not duplicated per feature.
+- Enforcement happens once, in a single shared check in `telegrambot/`, applied before any update is dispatched to `notify/` or `retry/` — not duplicated per feature.
 - Requests from users not on the allowlist are **silently ignored**, so the bot doesn't confirm its own existence or behavior to an unrecognized user probing it.
 
 ## 6. Explicit Limitations (By Design)
@@ -95,6 +84,7 @@ This system is deliberately scoped down. Each item below is a conscious tradeoff
 - **Retry buttons expire after 24 hours**, enforced by a background sweep that strips unused buttons after that window (see 5.2.1).
 - **Rate limits (GitHub API and Telegram Bot API) are an accepted risk, not actively handled.** At current usage volume, GitHub's 5,000 requests/hour authenticated limit and Telegram's roughly 1 message/second per chat limit are unlikely to be hit. No retry/backoff logic is built for this; if it becomes a real problem at higher volume, it can be addressed then.
 - **Duplicate webhook deliveries are actively deduplicated, not just accepted.** GitHub retries a webhook delivery if the endpoint times out or returns a non-2xx response, which could otherwise cause a duplicate Telegram notification for the same event. See Section 7.3 for the storage-backed dedupe mechanism.
+- **A dispatch failure un-does the dedupe record and returns a non-2xx response**, so a transient failure (e.g. a Telegram API blip) causes GitHub to retry the delivery instead of the notification being silently lost.
 
 ## 7. Technical Design
 
@@ -107,7 +97,7 @@ This system is deliberately scoped down. Each item below is a conscious tradeoff
 | GitHub REST client | `google/go-github` |
 | GitHub App auth | `jferrl/go-githubauth` |
 | Webhook parsing | `github.ValidatePayload` + `github.ParseWebHook` + typed event structs |
-| Telegram client | `go-telegram/bot`, optionally `go-telegram/ui` for keyboard/dialog helpers (pin version — pre-1.0) |
+| Telegram client | `go-telegram/bot` |
 | Persistence | SQLite (WAL mode) via `modernc.org/sqlite` (pure Go implementation, no CGO/C toolchain dependency) |
 | Deployment | Container on EKS; separate pipeline from existing infra repos, built via GitHub Actions, images pushed to GitHub Container Registry (GHCR) |
 
@@ -115,7 +105,7 @@ This system is deliberately scoped down. Each item below is a conscious tradeoff
 
 Configuration is layered from two sources, loaded via `koanf`:
 
-1. **File (YAML or TOML)** — non-secret structural config: repository allowlist, statically configured source/target branch names, listen port, GitHub App private key path.
+1. **File (YAML or TOML)** — non-secret structural config: repository allowlist, listen port, GitHub App private key path.
 2. **Environment variables** — secrets: Telegram bot token, GitHub webhook secret, Telegram webhook secret token. Env vars override/fill in on top of the file, using a configurable prefix (e.g. `APP_`).
 
 The **GitHub App private key** is provided as a **file path** in config (e.g. `github.private_key_path`, itself overridable via file or env), pointing to a Kubernetes Secret mounted as a volume at startup. This keeps the private key out of `os.Environ()` and process/crash dumps.
@@ -124,7 +114,7 @@ The **GitHub App private key** is provided as a **file path** in config (e.g. `g
 
 ### 7.3 Data Model (SQLite)
 
-All tables below hold transient state only — rows are not kept as permanent history. Once a record reaches a terminal status (`retried`/`expired` for `cicd_retries`, `completed`/`cancelled`/`expired` for `pr_sessions`, or simply past a short retention window for `webhook_deliveries`), it can be deleted rather than retained indefinitely. This can be done inline when the terminal state is reached, or swept periodically alongside the existing expiry sweep (see 5.2.1) — either approach keeps the SQLite file from growing unbounded.
+Both tables below hold transient state only — rows are not kept as permanent history. Once a record reaches a terminal status (`retried`/`expired` for `cicd_retries`, or simply past a short retention window for `webhook_deliveries`), it can be deleted rather than retained indefinitely. This can be done inline when the terminal state is reached, or swept periodically alongside the existing expiry sweep (see 5.2.1) — either approach keeps the SQLite file from growing unbounded.
 
 ```sql
 CREATE TABLE webhook_deliveries (
@@ -141,41 +131,31 @@ CREATE TABLE cicd_retries (
     status TEXT NOT NULL DEFAULT 'pending', -- pending | retried | expired
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE pr_sessions (
-    chat_id INTEGER NOT NULL,
-    message_id INTEGER NOT NULL,
-    step TEXT NOT NULL, -- select_repo | enter_title | enter_message | confirm | done | cancelled
-    repo TEXT,
-    pr_title TEXT,
-    pr_message TEXT,
-    status TEXT NOT NULL DEFAULT 'in_progress', -- in_progress | completed | cancelled | expired
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (chat_id, message_id)
-);
 ```
 
-**Idempotency**: before dispatching any parsed GitHub webhook event to `notify/`, the handler attempts to insert the delivery's `X-GitHub-Delivery` header value into `webhook_deliveries`. Relying on the primary key's uniqueness constraint to reject a duplicate insert (rather than a separate check-then-insert) avoids a race between checking and recording. If the insert fails as a duplicate, the handler responds `200 OK` (so GitHub stops retrying) but skips processing, since the event has already been handled.
+**Idempotency**: before dispatching any parsed GitHub webhook event to `notify/`, the handler attempts to insert the delivery's `X-GitHub-Delivery` header value into `webhook_deliveries`. Relying on the primary key's uniqueness constraint to reject a duplicate insert (rather than a separate check-then-insert) avoids a race between checking and recording. If the insert fails as a duplicate, the handler responds `200 OK` (so GitHub stops retrying) but skips processing, since the event has already been handled. If dispatching the event to `notify/` fails, the delivery record is deleted and the handler responds with a non-2xx status, so GitHub retries the delivery instead of the notification being silently lost.
 
 ### 7.4 Required GitHub App Permissions & Webhook Subscriptions
 
 | Permission | Level | Needed For |
 |---|---|---|
 | Contents | Read | `push` and `create` (tag/branch) events |
-| Pull requests | Read & Write | `pull_request`, `pull_request_review`, `pull_request_review_comment` events (read) + PR creation (write) |
+| Pull requests | Read | `pull_request`, `pull_request_review`, `pull_request_review_comment` events |
 | Issues | Read | `issue_comment` events (fires for both issue and PR comments; PR comments are distinguished by the presence of `issue.pull_request` in the payload) |
 | Actions | Read & Write | `workflow_run` events (read) + rerun-failed-jobs (write) |
 
 Webhook subscriptions to enable on the GitHub App registration: `push`, `create`, `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`.
+
+(The bulk PR-creation feature described in `docs/plan/deploy-checklist-bulk-pr.md` will need Pull Requests write access again once implemented.)
 
 ### 7.5 Endpoints Exposed
 
 | Endpoint | Purpose | Auth |
 |---|---|---|
 | `/webhooks/github` | Receives GitHub webhook deliveries | HMAC signature (`X-Hub-Signature-256`) validated via `github.ValidatePayload` |
-| `/webhooks/telegram` | Receives Telegram bot updates | `X-Telegram-Bot-Api-Secret-Token` header validated |
+| `/webhooks/telegram` | Receives Telegram bot updates | `X-Telegram-Bot-Api-Secret-Token` header validated (constant-time comparison) |
 
-### 7.6 Packages Needed for Planned Features
+### 7.6 Packages
 
 Brief map of each Go package to the feature it supports, with the directory structure it lives in:
 
@@ -192,7 +172,6 @@ hedwig/
 │   │
 │   ├── notify/                   # Feature: GitHub → Telegram notifications (Section 5.1)
 │   ├── retry/                     # Feature: CI/CD retry button and its 24-hour expiry (Section 5.2)
-│   ├── prcreate/                  # Feature: PR creation multi-step conversation (Section 5.3)
 │   │
 │   ├── storage/                  # SQLite access (Section 7.3): tables, queries, migrations
 │   ├── httpserver/                # HTTP routes for the two webhook endpoints (Section 7.5)
@@ -210,8 +189,7 @@ hedwig/
 | `telegrambot/` | Wraps calls to Telegram: sending messages, building inline keyboards (buttons attached to a message), and handling button taps |
 | `notify/` | Turns a GitHub webhook event into a Telegram message (Section 5.1) |
 | `retry/` | Handles the "Retry failed jobs" button and its 24-hour expiry (Section 5.2) |
-| `prcreate/` | Handles the multi-step pull request creation conversation (Section 5.3) |
-| `storage/` | Reads and writes the two SQLite tables (`cicd_retries`, `pr_sessions`) |
+| `storage/` | Reads and writes the SQLite tables (`webhook_deliveries`, `cicd_retries`) |
 | `httpserver/` | Exposes the two Hypertext Transfer Protocol (HTTP) endpoints that receive webhook deliveries from GitHub and Telegram |
 | `logging/` | Writes structured JavaScript Object Notation (JSON) logs with a request ID for tracing a single event across the system |
 
@@ -221,13 +199,12 @@ hedwig/
 |---|---|---|
 | `notify/` | Strategy pattern + registry (a lookup table mapping each event type to its handler) | Every GitHub webhook event type follows the same process (parse → build message → send), but differs in content and message template; one handler implementation per event type keeps this consistent and easy to extend |
 | `retry/` | Explicit state transitions (a small, hand-written state machine — a Finite State Machine, or FSM, is a model where something can only be in one defined state at a time and moves between states through defined rules) | Only two real states (pending, retried/expired), but transitions should still go through one controlled function so an invalid state change (e.g. an expired button being retried) is impossible by construction |
-| `prcreate/` | Finite State Machine (FSM) with a transition table, combined with the Strategy pattern per step | The pull request (PR) creation flow has ordered steps, must support cancel from any step, and must survive a pod restart, so the current step and its data need to be explicit and stored, not just implicit in code flow |
 | `githubapp/`, `telegrambot/` | Adapter pattern (a thin wrapper exposing only the specific operations needed, behind a small interface — a contract describing what methods a type must have, without dictating how) | Keeps GitHub API and Telegram Bot API calls swappable for test doubles (fake implementations used in automated tests instead of the real service) |
-| `storage/` | Repository pattern (an interface that hides how data is actually stored, e.g. behind SQLite, so calling code only deals with simple read/write operations) | Lets the CI/CD retry and PR-session sweep logic be tested without a real SQLite file |
+| `storage/` | Repository pattern (an interface that hides how data is actually stored, e.g. behind SQLite, so calling code only deals with simple read/write operations) | Lets the CI/CD retry sweep logic be tested without a real SQLite file |
 | `config/` | Plain loader function (no builder or fluent options pattern) | Configuration is loaded once at startup and never reconfigured at runtime, so a simpler one-shot function is enough |
 | `main.go` (entry point) | Manual constructor injection (passing dependencies directly into constructor functions, instead of using a Dependency Injection, or DI, framework that wires them automatically) | Keeps the full dependency graph visible in one file, which matters more at this project's size than the convenience a DI framework would add |
 
-The common thread: wherever multiple things share the same overall process but differ in content (event types in `notify/`, steps in `prcreate/`), use the Strategy pattern with a registry. Wherever there's an ordered progression with state that must persist (retry buttons, PR sessions), make the states and transitions explicit rather than implicit in scattered conditional checks.
+The common thread: wherever multiple things share the same overall process but differ in content (event types in `notify/`), use the Strategy pattern with a registry. Wherever there's an ordered progression with state that must persist (retry buttons), make the states and transitions explicit rather than implicit in scattered conditional checks.
 
 ### 7.8 Application Packaging
 
@@ -267,6 +244,6 @@ Since persistence uses `modernc.org/sqlite` (Section 7.1), the build runs fully 
 
 - **Single replica (`replicas: 1`)**, backed by an EBS-backed PVC (ReadWriteOnce is sufficient for one writer) so the SQLite file survives pod restarts. This is a non-critical internal tool, so brief downtime on crash is acceptable.
 - SQLite in **WAL mode** to allow concurrent reads/writes within the single process.
-- **Self-healing on crash**: Kubernetes' default restart policy brings the pod back automatically; since all session/retry state lives in the PVC-backed SQLite file rather than in-memory, a restarted pod resumes from where it left off (pending retries, in-progress PR sessions) rather than losing state. A liveness probe should be configured so a hung (not just crashed) process also gets restarted rather than sitting unresponsive.
-- Logs written to **stdout as structured JSON**, including a `request_id` (or equivalent correlation ID) per related request/process/event, so a webhook delivery, its downstream Telegram message, and any retry/callback can be traced through the same ID. Log aggregation (e.g. shipping stdout to the existing Loki stack) is an infra-level concern outside this service's own responsibility.
-- A pod restart mid-flow (PR creation or pending retry) should not corrupt state, since both live in SQLite rather than in-memory; `go-telegram/ui` components should use stable `bot.WithPrefix` values if used, so callback data remains addressable across restarts.
+- **Self-healing on crash**: Kubernetes' default restart policy brings the pod back automatically; since all retry state lives in the PVC-backed SQLite file rather than in-memory, a restarted pod resumes from where it left off (pending retries) rather than losing state. A liveness probe should be configured so a hung (not just crashed) process also gets restarted rather than sitting unresponsive.
+- Logs written to **stdout as structured JSON**, including a `request_id` (or equivalent correlation ID) per related request/process/event, so a webhook delivery, its downstream Telegram message, and any retry callback can be traced through the same ID. Log aggregation (e.g. shipping stdout to the existing Loki stack) is an infra-level concern outside this service's own responsibility.
+- A pod restart mid-flow (pending retry) should not corrupt state, since it lives in SQLite rather than in-memory.

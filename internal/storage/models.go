@@ -19,35 +19,3 @@ type CICDRetry struct {
 	Status    RetryStatus
 	CreatedAt time.Time
 }
-
-type PRStep string
-
-const (
-	PRStepSelectRepo   PRStep = "select_repo"
-	PRStepEnterTitle   PRStep = "enter_title"
-	PRStepEnterMessage PRStep = "enter_message"
-	PRStepConfirm      PRStep = "confirm"
-	PRStepDone         PRStep = "done"
-	PRStepCancelled    PRStep = "cancelled"
-)
-
-type PRStatus string
-
-const (
-	PRStatusInProgress PRStatus = "in_progress"
-	PRStatusCompleted  PRStatus = "completed"
-	PRStatusCancelled  PRStatus = "cancelled"
-	PRStatusExpired    PRStatus = "expired"
-)
-
-type PRSession struct {
-	ChatID      int64
-	MessageID   int64
-	Step        PRStep
-	Repo        string
-	PRTitle     string
-	PRMessage   string
-	Status      PRStatus
-	TriggerUser string
-	UpdatedAt   time.Time
-}
