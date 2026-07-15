@@ -28,7 +28,7 @@ func (c *githubClient) ValidateWebhook(r *http.Request) ([]byte, error) {
 	return payload, nil
 }
 
-func (c *githubClient) ParseWebhook(eventType string, payload []byte) (interface{}, error) {
+func (c *githubClient) ParseWebhook(eventType string, payload []byte) (any, error) {
 	return github.ParseWebHook(eventType, payload)
 }
 

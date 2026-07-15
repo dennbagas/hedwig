@@ -23,7 +23,7 @@ func TestRegisterAllWiresEveryEventType(t *testing.T) {
 
 	tests := []struct {
 		eventType string
-		event     interface{}
+		event     any
 	}{
 		{"push", unmarshalEvent[github.PushEvent](t, `{"pusher":{"name":"a"},"repository":{"full_name":"a/b"}}`)},
 		{"pull_request", unmarshalEvent[github.PullRequestEvent](t, `{"action":"opened","pull_request":{"title":"t","html_url":"u"}}`)},

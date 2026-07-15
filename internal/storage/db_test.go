@@ -54,6 +54,18 @@ func TestOpenSetsWALMode(t *testing.T) {
 	}
 }
 
+func TestOpenSetsBusyTimeout(t *testing.T) {
+	db := newTestDB(t)
+
+	var timeoutMS int
+	if err := db.QueryRow(`PRAGMA busy_timeout`).Scan(&timeoutMS); err != nil {
+		t.Fatalf("query busy_timeout: %v", err)
+	}
+	if timeoutMS != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", timeoutMS)
+	}
+}
+
 func TestOpenIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 

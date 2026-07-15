@@ -9,7 +9,7 @@ import (
 )
 
 type EventHandler interface {
-	Handle(ctx context.Context, event interface{}) error
+	Handle(ctx context.Context, event any) error
 }
 
 type Dispatcher struct {
@@ -32,7 +32,7 @@ func (d *Dispatcher) Register(eventType string, h EventHandler) {
 	d.handlers[eventType] = h
 }
 
-func (d *Dispatcher) Dispatch(ctx context.Context, eventType string, event interface{}) error {
+func (d *Dispatcher) Dispatch(ctx context.Context, eventType string, event any) error {
 	h, ok := d.handlers[eventType]
 	if !ok {
 		d.logger.Debug("no handler registered for event type", zap.String("event_type", eventType))

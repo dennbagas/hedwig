@@ -17,7 +17,7 @@ func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
 		loggerInContext = logging.FromContext(r.Context())
 	})
 
-	handler := requestIDMiddleware(next)
+	handler := requestIDMiddleware(zap.NewNop())(next)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -32,10 +32,31 @@ func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
 	}
 }
 
+func TestRequestIDMiddlewareUsesTheConfiguredLogger(t *testing.T) {
+	// Regression test: requestIDMiddleware must derive the per-request
+	// logger from the logger it was constructed with, not fall back to
+	// logging.FromContext's default (a fresh zap.NewProduction() instance)
+	// just because the incoming request has no logger attached yet.
+	core, logs := observer.New(zapcore.InfoLevel)
+	configured := zap.New(core)
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logging.FromContext(r.Context()).Info("from handler")
+	})
+
+	handler := requestIDMiddleware(configured)(next)
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	entries := logs.All()
+	if len(entries) != 1 || entries[0].Message != "from handler" {
+		t.Fatalf("logs = %+v, want exactly one entry logged through the configured logger", entries)
+	}
+}
+
 func TestRequestIDMiddlewareGeneratesUniqueIDs(t *testing.T) {
 	seen := make(map[string]bool)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
-	handler := requestIDMiddleware(next)
+	handler := requestIDMiddleware(zap.NewNop())(next)
 
 	for i := 0; i < 10; i++ {
 		rec := httptest.NewRecorder()
@@ -55,7 +76,7 @@ func TestLoggingMiddlewareRecordsActualStatus(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	})
-	handler := loggingMiddleware(logger)(next)
+	handler := loggingMiddleware()(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/foo", nil)
 	req = req.WithContext(logging.WithContext(req.Context(), logger))
@@ -91,7 +112,7 @@ func TestLoggingMiddlewareDefaultsToOKWhenHandlerNeverWritesStatus(t *testing.T)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("hi")) // implicit 200, never calls WriteHeader directly
 	})
-	handler := loggingMiddleware(logger)(next)
+	handler := loggingMiddleware()(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(logging.WithContext(req.Context(), logger))

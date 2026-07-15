@@ -14,7 +14,7 @@ type pushHandler struct {
 	chatID int64
 }
 
-func (h *pushHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *pushHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.PushEvent)
 	if !ok {
 		return nil
@@ -39,7 +39,7 @@ type pullRequestHandler struct {
 	chatID int64
 }
 
-func (h *pullRequestHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *pullRequestHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.PullRequestEvent)
 	if !ok {
 		return nil
@@ -76,7 +76,7 @@ type createHandler struct {
 	chatID int64
 }
 
-func (h *createHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *createHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.CreateEvent)
 	if !ok {
 		return nil
@@ -111,7 +111,7 @@ type issueCommentHandler struct {
 	chatID int64
 }
 
-func (h *issueCommentHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *issueCommentHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.IssueCommentEvent)
 	if !ok {
 		return nil
@@ -138,7 +138,7 @@ type pullRequestReviewHandler struct {
 	chatID int64
 }
 
-func (h *pullRequestReviewHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.PullRequestReviewEvent)
 	if !ok {
 		return nil
@@ -162,7 +162,7 @@ type pullRequestReviewCommentHandler struct {
 	chatID int64
 }
 
-func (h *pullRequestReviewCommentHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *pullRequestReviewCommentHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.PullRequestReviewCommentEvent)
 	if !ok {
 		return nil
@@ -178,30 +178,6 @@ func (h *pullRequestReviewCommentHandler) Handle(ctx context.Context, event inte
 	url := e.GetComment().GetHTMLURL()
 	text := fmt.Sprintf("Review comment on PR <b>%s</b> by <b>%s</b>\n%s:%d\n%s\n%s",
 		esc(prTitle), esc(commenter), esc(file), line, esc(excerpt), htmlLink("View comment", url))
-	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
-}
-
-// workflowRunStartedHandler notifies when a CI/CD run is requested.
-type workflowRunStartedHandler struct {
-	tg     telegrambot.Client
-	chatID int64
-}
-
-func (h *workflowRunStartedHandler) Handle(ctx context.Context, event interface{}) error {
-	e, ok := event.(*github.WorkflowRunEvent)
-	if !ok {
-		return nil
-	}
-	if e.GetAction() != "requested" {
-		return nil
-	}
-	name := e.GetWorkflowRun().GetName()
-	repo := e.GetRepo().GetFullName()
-	branch := e.GetWorkflowRun().GetHeadBranch()
-	url := e.GetWorkflowRun().GetHTMLURL()
-	text := fmt.Sprintf("CI/CD started: <b>%s</b>\n%s on %s\n%s",
-		esc(name), esc(repo), esc(branch), htmlLink("View run", url))
 	_, err := h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
 	return err
 }

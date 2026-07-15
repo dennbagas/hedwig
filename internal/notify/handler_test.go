@@ -14,7 +14,7 @@ type stubHandler struct {
 	err    error
 }
 
-func (s *stubHandler) Handle(_ context.Context, _ interface{}) error {
+func (s *stubHandler) Handle(_ context.Context, _ any) error {
 	s.called = true
 	return s.err
 }

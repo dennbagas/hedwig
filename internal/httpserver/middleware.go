@@ -19,17 +19,19 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-func requestIDMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := telegrambot.GenerateRequestID()
-		w.Header().Set("X-Request-ID", id)
-		logger := logging.FromContext(r.Context()).With(logging.FieldRequestID(id))
-		ctx := logging.WithContext(r.Context(), logger)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+func requestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := telegrambot.GenerateRequestID()
+			w.Header().Set("X-Request-ID", id)
+			reqLogger := logger.With(logging.FieldRequestID(id))
+			ctx := logging.WithContext(r.Context(), reqLogger)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
-func loggingMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
+func loggingMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -41,7 +43,6 @@ func loggingMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.Int("status", rec.status),
 				zap.Duration("duration", time.Since(start)),
 			)
-			_ = logger
 		})
 	}
 }

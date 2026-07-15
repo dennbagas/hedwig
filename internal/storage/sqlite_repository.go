@@ -91,7 +91,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	}
 
 	if len(retries) > 0 {
-		ids := make([]interface{}, len(retries))
+		ids := make([]any, len(retries))
 		placeholders := make([]byte, 0, len(retries)*2)
 		for i, ret := range retries {
 			ids[i] = ret.ID

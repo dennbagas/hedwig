@@ -16,7 +16,7 @@ type workflowRunHandler struct {
 	retryH *retry.Handler
 }
 
-func (h *workflowRunHandler) Handle(ctx context.Context, event interface{}) error {
+func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
 	e, ok := event.(*github.WorkflowRunEvent)
 	if !ok {
 		return nil

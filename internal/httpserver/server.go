@@ -52,7 +52,7 @@ func New(
 
 func (s *Server) Handler() http.Handler {
 	return chain(s.mux,
-		requestIDMiddleware,
-		loggingMiddleware(s.logger),
+		requestIDMiddleware(s.logger),
+		loggingMiddleware(),
 	)
 }

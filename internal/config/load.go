@@ -15,6 +15,11 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
+// validate is a package-level singleton per the library's own guidance:
+// "Validate is designed to be thread-safe and used as a singleton instance
+// ... Using multiple instances neglects the benefit of caching."
+var validate = validator.New()
+
 func Load(path string) (*Config, error) {
 	k := koanf.New(".")
 
@@ -38,7 +43,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	if err := validator.New().Struct(&cfg); err != nil {
+	if err := validate.Struct(&cfg); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 

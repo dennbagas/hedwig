@@ -20,6 +20,14 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
 
+	// Paired with WAL mode per SQLite's own guidance: a busy_timeout makes a
+	// transient lock conflict (e.g. cmd/migrate and cmd/bot briefly touching
+	// the same file from separate processes) block and retry for up to 5s
+	// instead of failing immediately with SQLITE_BUSY.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
 	if err := runMigrations(db); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}

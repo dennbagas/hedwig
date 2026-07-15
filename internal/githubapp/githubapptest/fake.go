@@ -31,7 +31,7 @@ type FakeClient struct {
 	mu sync.Mutex
 
 	ValidateWebhookFunc func(r *http.Request) ([]byte, error)
-	ParseWebhookFunc    func(eventType string, payload []byte) (interface{}, error)
+	ParseWebhookFunc    func(eventType string, payload []byte) (any, error)
 
 	RerunFailedJobsErr error
 	CreatePRResult     string
@@ -53,7 +53,7 @@ func (f *FakeClient) ValidateWebhook(r *http.Request) ([]byte, error) {
 	return nil, nil
 }
 
-func (f *FakeClient) ParseWebhook(eventType string, payload []byte) (interface{}, error) {
+func (f *FakeClient) ParseWebhook(eventType string, payload []byte) (any, error) {
 	if f.ParseWebhookFunc != nil {
 		return f.ParseWebhookFunc(eventType, payload)
 	}

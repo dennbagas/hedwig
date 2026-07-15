@@ -15,7 +15,7 @@ func alwaysValidValidateWebhook(r *http.Request) ([]byte, error) {
 	return io.ReadAll(r.Body)
 }
 
-func realParseWebhook(eventType string, payload []byte) (interface{}, error) {
+func realParseWebhook(eventType string, payload []byte) (any, error) {
 	return github.ParseWebHook(eventType, payload)
 }
 
