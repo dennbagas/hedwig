@@ -4,8 +4,6 @@ type Config struct {
 	Server   ServerConfig   `koanf:"server"`
 	GitHub   GitHubConfig   `koanf:"github"`
 	Telegram TelegramConfig `koanf:"telegram"`
-	Repos    []RepoConfig   `koanf:"repos"    validate:"required,min=1,dive,required"`
-	PR       PRConfig       `koanf:"pr"`
 	Database DatabaseConfig `koanf:"database"`
 }
 
@@ -28,16 +26,6 @@ type TelegramConfig struct {
 	WebhookURL     string  `koanf:"webhook_url"     validate:"required,url"`
 	ChatID         int64   `koanf:"chat_id"         validate:"required"`
 	AllowedUserIDs []int64 `koanf:"allowed_user_ids" validate:"required,min=1"`
-}
-
-type RepoConfig struct {
-	Name  string `koanf:"name"  validate:"required"`
-	Owner string `koanf:"owner" validate:"required"`
-}
-
-type PRConfig struct {
-	SourceBranch string `koanf:"source_branch" validate:"required"`
-	TargetBranch string `koanf:"target_branch" validate:"required"`
 }
 
 type DatabaseConfig struct {

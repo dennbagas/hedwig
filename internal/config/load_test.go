@@ -82,14 +82,6 @@ telegram:
   allowed_user_ids:
 %s
 
-repos:
-  - name: my-service
-    owner: my-org
-
-pr:
-  source_branch: develop
-  target_branch: main
-
 database:
   path: /data/hedwig.db
 `, o.port, o.keyPath, o.githubWebhookSecret, o.allowedUserIDsYAML)
@@ -139,9 +131,6 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.GitHub.AppID != 123456 {
 		t.Errorf("GitHub.AppID = %d, want 123456", cfg.GitHub.AppID)
-	}
-	if len(cfg.Repos) != 1 || cfg.Repos[0].Name != "my-service" || cfg.Repos[0].Owner != "my-org" {
-		t.Errorf("Repos = %+v, want one repo my-org/my-service", cfg.Repos)
 	}
 	if len(cfg.Telegram.AllowedUserIDs) != 1 || cfg.Telegram.AllowedUserIDs[0] != 111222333 {
 		t.Errorf("Telegram.AllowedUserIDs = %v, want [111222333]", cfg.Telegram.AllowedUserIDs)
@@ -240,14 +229,6 @@ telegram:
   chat_id: -100123456789
   allowed_user_ids:
     - 111222333
-
-repos:
-  - name: my-service
-    owner: my-org
-
-pr:
-  source_branch: develop
-  target_branch: main
 
 database:
   path: /data/hedwig.db

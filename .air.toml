@@ -1,0 +1,26 @@
+#:schema https://json.schemastore.org/any.json
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "./tmp/bot"
+  cmd = "go build -o ./tmp/bot ./cmd/bot"
+  delay = 1000
+  exclude_dir = ["tmp", "vendor", "testdata"]
+  exclude_regex = ["_test.go"]
+  include_ext = ["go", "yaml", "toml", "sql"]
+  kill_delay = "0s"
+  send_interrupt = true
+  stop_on_error = true
+  log = "build-errors.log"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = true
+  keep_scroll = true

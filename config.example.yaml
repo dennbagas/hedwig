@@ -6,27 +6,17 @@ github:
   app_id: 123456
   installation_id: 789012
   private_key_path: /etc/hedwig/github-app.pem
-  webhook_secret: ""  # set via APP_GITHUB_WEBHOOK_SECRET env var
+  webhook_secret: "" # set via APP_GITHUB_WEBHOOK_SECRET
 
 telegram:
-  bot_token: ""         # set via APP_TELEGRAM_BOT_TOKEN env var
-  webhook_secret: ""    # set via APP_TELEGRAM_WEBHOOK_SECRET env var
+  bot_token: "" # set via APP_TELEGRAM_BOT_TOKEN
+  webhook_secret: "" # set via APP_TELEGRAM_WEBHOOK_SECRET
   webhook_path: /webhooks/telegram
   webhook_url: https://hedwig.example.com/webhooks/telegram
   chat_id: -100123456789
   allowed_user_ids:
     - 111222333
     - 444555666
-
-repos:
-  - name: my-service
-    owner: my-org
-  - name: another-service
-    owner: my-org
-
-pr:
-  source_branch: develop
-  target_branch: main
 
 database:
   path: /data/hedwig.db

@@ -1,5 +1,6 @@
 # Binaries
 /bin/
+/tmp/
 *.exe
 
 # Database files
@@ -25,3 +26,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Secret dir
+secrets/
