@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 func alwaysValidValidateWebhook(r *http.Request) ([]byte, error) {
@@ -91,7 +91,7 @@ func TestGitHubWebhookNoDeliveryIDSkipsDedup(t *testing.T) {
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		req := httptest.NewRequest(http.MethodPost, "/webhooks/github", strings.NewReader(pushEventBody))
 		req.Header.Set("X-GitHub-Event", "push")
 		// Deliberately no X-GitHub-Delivery header.

@@ -10,7 +10,7 @@ import (
 	"hedwig/internal/retry"
 	"hedwig/internal/database"
 	"hedwig/internal/telegrambot/telegrambottest"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 	"go.uber.org/zap"
 )
 

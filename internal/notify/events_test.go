@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"hedwig/internal/telegrambot/telegrambottest"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 func unmarshalEvent[T any](t *testing.T, payload string) *T {

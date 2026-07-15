@@ -114,7 +114,7 @@ func TestGenerateRequestID(t *testing.T) {
 
 func TestGenerateRequestIDUnique(t *testing.T) {
 	seen := make(map[string]bool)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		id := GenerateRequestID()
 		if seen[id] {
 			t.Fatalf("GenerateRequestID() produced a duplicate after %d calls: %q", i, id)

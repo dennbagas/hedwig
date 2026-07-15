@@ -6,7 +6,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-telegram/bot v1.22.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
-	github.com/google/go-github/v66 v66.0.0
+	github.com/google/go-github/v88 v88.0.0
 	github.com/jferrl/go-githubauth v1.7.0
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/env v1.1.0

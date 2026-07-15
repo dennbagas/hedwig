@@ -5,10 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"hedwig/internal/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
+	"hedwig/internal/logging"
 )
 
 func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
@@ -58,7 +58,7 @@ func TestRequestIDMiddlewareGeneratesUniqueIDs(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	handler := requestIDMiddleware(zap.NewNop())(next)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 		id := rec.Header().Get("X-Request-ID")

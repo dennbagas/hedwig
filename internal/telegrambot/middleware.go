@@ -3,6 +3,7 @@ package telegrambot
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"slices"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -13,12 +14,7 @@ func IsAllowed(allowedIDs []int64, update *models.Update) bool {
 	if !ok {
 		return false
 	}
-	for _, id := range allowedIDs {
-		if id == uid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(allowedIDs, uid)
 }
 
 // ExtractUserID returns the user ID from a Telegram update regardless of type.

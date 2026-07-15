@@ -59,7 +59,10 @@ func run() error {
 		return fmt.Errorf("create github http client: %w", err)
 	}
 
-	gh := githubapp.New(ghHTTPClient, cfg.GitHub.WebhookSecret)
+	gh, err := githubapp.New(ghHTTPClient, cfg.GitHub.WebhookSecret)
+	if err != nil {
+		return fmt.Errorf("create github client: %w", err)
+	}
 
 	tg, err := telegrambot.New(cfg.Telegram.BotToken)
 	if err != nil {

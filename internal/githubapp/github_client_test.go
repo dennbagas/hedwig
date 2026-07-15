@@ -9,11 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 func signBody(secret string, body []byte) string {
@@ -30,7 +29,7 @@ func newSignedWebhookRequest(secret string, body []byte, signature string) *http
 }
 
 func TestValidateWebhookValidSignature(t *testing.T) {
-	c := New(http.DefaultClient, "my-secret")
+	c, _ := New(http.DefaultClient, "my-secret")
 	body := []byte(`{"zen":"hello"}`)
 	req := newSignedWebhookRequest("my-secret", body, signBody("my-secret", body))
 
@@ -44,7 +43,7 @@ func TestValidateWebhookValidSignature(t *testing.T) {
 }
 
 func TestValidateWebhookWrongSecret(t *testing.T) {
-	c := New(http.DefaultClient, "my-secret")
+	c, _ := New(http.DefaultClient, "my-secret")
 	body := []byte(`{"zen":"hello"}`)
 	req := newSignedWebhookRequest("my-secret", body, signBody("wrong-secret", body))
 
@@ -55,7 +54,7 @@ func TestValidateWebhookWrongSecret(t *testing.T) {
 }
 
 func TestValidateWebhookTamperedBody(t *testing.T) {
-	c := New(http.DefaultClient, "my-secret")
+	c, _ := New(http.DefaultClient, "my-secret")
 	signedBody := []byte(`{"zen":"hello"}`)
 	sig := signBody("my-secret", signedBody)
 	// Send a different body than the one the signature was computed over.
@@ -68,7 +67,7 @@ func TestValidateWebhookTamperedBody(t *testing.T) {
 }
 
 func TestValidateWebhookMissingSignature(t *testing.T) {
-	c := New(http.DefaultClient, "my-secret")
+	c, _ := New(http.DefaultClient, "my-secret")
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/github", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -79,7 +78,7 @@ func TestValidateWebhookMissingSignature(t *testing.T) {
 }
 
 func TestParseWebhookKnownEventType(t *testing.T) {
-	c := New(http.DefaultClient, "secret")
+	c, _ := New(http.DefaultClient, "secret")
 	payload := []byte(`{"ref":"refs/heads/main","repository":{"full_name":"acme/widgets"}}`)
 
 	event, err := c.ParseWebhook("push", payload)
@@ -96,7 +95,7 @@ func TestParseWebhookKnownEventType(t *testing.T) {
 }
 
 func TestParseWebhookUnknownEventType(t *testing.T) {
-	c := New(http.DefaultClient, "secret")
+	c, _ := New(http.DefaultClient, "secret")
 	_, err := c.ParseWebhook("not_a_real_event_type", []byte(`{}`))
 	if err == nil {
 		t.Fatal("ParseWebhook() error = nil, want error for an unrecognized event type")
@@ -107,15 +106,16 @@ func TestParseWebhookUnknownEventType(t *testing.T) {
 // returns a githubClient pointed at it.
 func newTestGithubClient(t *testing.T, handler http.HandlerFunc) *githubClient {
 	t.Helper()
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(http.StripPrefix("/api/v3", handler))
 	t.Cleanup(server.Close)
 
-	gh := github.NewClient(server.Client())
-	baseURL, err := url.Parse(server.URL + "/")
+	gh, err := github.NewClient(
+		github.WithHTTPClient(server.Client()),
+		github.WithEnterpriseURLs(server.URL+"/", server.URL+"/"),
+	)
 	if err != nil {
-		t.Fatalf("parse test server URL: %v", err)
+		t.Fatalf("create github client: %v", err)
 	}
-	gh.BaseURL = baseURL
 
 	return &githubClient{client: gh, webhookSecret: "unused"}
 }

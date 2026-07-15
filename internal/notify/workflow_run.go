@@ -5,7 +5,7 @@ import (
 
 	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 // workflowRunHandler handles both "requested" and "completed" workflow_run events.

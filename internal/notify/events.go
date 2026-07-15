@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"hedwig/internal/telegrambot"
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 // pushHandler handles push events.

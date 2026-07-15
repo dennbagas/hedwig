@@ -2,10 +2,11 @@ package githubapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v88/github"
 )
 
 type githubClient struct {
@@ -13,11 +14,15 @@ type githubClient struct {
 	webhookSecret string
 }
 
-func New(httpClient *http.Client, webhookSecret string) Client {
-	return &githubClient{
-		client:        github.NewClient(httpClient),
-		webhookSecret: webhookSecret,
+func New(httpClient *http.Client, webhookSecret string) (Client, error) {
+	client, err := github.NewClient(github.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, fmt.Errorf("create github client: %w", err)
 	}
+	return &githubClient{
+		client:        client,
+		webhookSecret: webhookSecret,
+	}, nil
 }
 
 func (c *githubClient) ValidateWebhook(r *http.Request) ([]byte, error) {
@@ -39,10 +44,10 @@ func (c *githubClient) RerunFailedJobs(ctx context.Context, owner, repo string, 
 
 func (c *githubClient) CreatePR(ctx context.Context, owner, repo, title, body, head, base string) (string, error) {
 	pr, _, err := c.client.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
-		Title: github.String(title),
-		Body:  github.String(body),
-		Head:  github.String(head),
-		Base:  github.String(base),
+		Title: new(title),
+		Body:  new(body),
+		Head:  new(head),
+		Base:  new(base),
 	})
 	if err != nil {
 		return "", fmt.Errorf("create pull request: %w", parsePRError(err, owner, repo, head, base))
@@ -51,8 +56,8 @@ func (c *githubClient) CreatePR(ctx context.Context, owner, repo, title, body, h
 }
 
 func parsePRError(err error, owner, repo, head, base string) error {
-	ghErr, ok := err.(*github.ErrorResponse)
-	if !ok {
+	var ghErr *github.ErrorResponse
+	if !errors.As(err, &ghErr) {
 		return err
 	}
 
