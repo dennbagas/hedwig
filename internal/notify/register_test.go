@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"hedwig/internal/telegrambot/telegrambottest"
+
 	"github.com/google/go-github/v88/github"
 	"go.uber.org/zap"
 )

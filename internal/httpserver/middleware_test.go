@@ -5,10 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"hedwig/internal/logging"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
-	"hedwig/internal/logging"
 )
 
 func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {

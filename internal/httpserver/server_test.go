@@ -4,11 +4,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"hedwig/internal/database"
 	"hedwig/internal/githubapp/githubapptest"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
-	"hedwig/internal/database"
 	"hedwig/internal/telegrambot/telegrambottest"
+
 	"go.uber.org/zap"
 )
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"hedwig/internal/telegrambot"
+
 	"github.com/google/go-github/v88/github"
 )
 

@@ -10,6 +10,7 @@ import (
 
 	"hedwig/internal/logging"
 	"hedwig/internal/telegrambot"
+
 	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 )
@@ -80,7 +81,7 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 	return nil
 }
 
-func (s *Server) routeMessage(ctx context.Context, logger *zap.Logger, msg *models.Message) error {
+func (s *Server) routeMessage(_ context.Context, logger *zap.Logger, msg *models.Message) error {
 	logger.Debug("unhandled command", zap.String("text", msg.Text))
 	return nil
 }

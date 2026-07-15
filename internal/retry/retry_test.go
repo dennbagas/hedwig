@@ -9,10 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"hedwig/internal/githubapp/githubapptest"
 	"hedwig/internal/database"
+	"hedwig/internal/githubapp/githubapptest"
 	"hedwig/internal/telegrambot"
 	"hedwig/internal/telegrambot/telegrambottest"
+
 	"go.uber.org/zap"
 )
 

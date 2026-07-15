@@ -6,9 +6,10 @@ import (
 	"html"
 	"strconv"
 
-	"hedwig/internal/githubapp"
 	"hedwig/internal/database"
+	"hedwig/internal/githubapp"
 	"hedwig/internal/telegrambot"
+
 	"go.uber.org/zap"
 )
 

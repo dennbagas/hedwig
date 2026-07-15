@@ -6,6 +6,7 @@ import (
 
 	"hedwig/internal/logging"
 	"hedwig/internal/telegrambot"
+
 	"go.uber.org/zap"
 )
 

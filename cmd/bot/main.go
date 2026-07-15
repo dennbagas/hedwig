@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"hedwig/internal/config"
+	"hedwig/internal/database"
 	"hedwig/internal/githubapp"
 	"hedwig/internal/httpserver"
 	"hedwig/internal/logging"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
-	"hedwig/internal/database"
 	"hedwig/internal/telegrambot"
+
 	"go.uber.org/zap"
 )
 

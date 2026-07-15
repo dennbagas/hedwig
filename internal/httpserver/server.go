@@ -3,10 +3,11 @@ package httpserver
 import (
 	"net/http"
 
+	"hedwig/internal/database"
 	"hedwig/internal/githubapp"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
-	"hedwig/internal/database"
+
 	"go.uber.org/zap"
 )
 
