@@ -3,16 +3,16 @@ package httpserver
 import (
 	"net/http"
 
-	"github.com/btse/hedwig/internal/githubapp"
-	"github.com/btse/hedwig/internal/notify"
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/storage"
+	"hedwig/internal/githubapp"
+	"hedwig/internal/notify"
+	"hedwig/internal/retry"
+	"hedwig/internal/database"
 	"go.uber.org/zap"
 )
 
 type Server struct {
 	github         githubapp.Client
-	store          storage.Repository
+	store          database.Repository
 	notifyD        *notify.Dispatcher
 	retryH         *retry.Handler
 	allowedUserIDs []int64
@@ -23,7 +23,7 @@ type Server struct {
 
 func New(
 	gh githubapp.Client,
-	store storage.Repository,
+	store database.Repository,
 	notifyD *notify.Dispatcher,
 	retryH *retry.Handler,
 	allowedUserIDs []int64,

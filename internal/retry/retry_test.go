@@ -9,32 +9,32 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btse/hedwig/internal/githubapp/githubapptest"
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot"
-	"github.com/btse/hedwig/internal/telegrambot/telegrambottest"
+	"hedwig/internal/githubapp/githubapptest"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot"
+	"hedwig/internal/telegrambot/telegrambottest"
 	"go.uber.org/zap"
 )
 
 // newTestRepo returns a real SQLite-backed repository (temp file, cleaned up
 // automatically) plus the underlying *sql.DB for tests that need to
 // manipulate rows directly (e.g. backdating timestamps for expiry tests).
-func newTestRepo(t *testing.T) (*sql.DB, storage.Repository) {
+func newTestRepo(t *testing.T) (*sql.DB, database.Repository) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
-	db, err := storage.Open(path)
+	db, err := database.Open(path)
 	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
+		t.Fatalf("database.Open() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Errorf("db.Close() error = %v", err)
 		}
 	})
-	return db, storage.NewSQLiteRepository(db)
+	return db, database.NewSQLiteRepository(db)
 }
 
-func newTestHandler(t *testing.T) (*Handler, *telegrambottest.FakeClient, *githubapptest.FakeClient, storage.Repository) {
+func newTestHandler(t *testing.T) (*Handler, *telegrambottest.FakeClient, *githubapptest.FakeClient, database.Repository) {
 	t.Helper()
 	_, store := newTestRepo(t)
 	tg := telegrambottest.New()
@@ -93,7 +93,7 @@ func TestNotifyFailureSuccess(t *testing.T) {
 	if rec == nil {
 		t.Fatal("expected a retry record to have been persisted")
 	}
-	if rec.ChatID != 100 || rec.RunID != 55 || rec.Repo != "acme/widgets" || rec.Status != storage.RetryStatusPending {
+	if rec.ChatID != 100 || rec.RunID != 55 || rec.Repo != "acme/widgets" || rec.Status != database.RetryStatusPending {
 		t.Errorf("persisted retry = %+v, want matching fields", rec)
 	}
 }
@@ -149,7 +149,7 @@ func TestNotifyFailureButtonAttachErrorStillSucceeds(t *testing.T) {
 	if rec == nil {
 		t.Fatal("expected the retry record to exist even though the button never got attached")
 	}
-	if rec.Status != storage.RetryStatusPending {
+	if rec.Status != database.RetryStatusPending {
 		t.Errorf("status = %q, want still pending", rec.Status)
 	}
 }
@@ -176,7 +176,7 @@ func TestHandleCallbackNonPendingStatus(t *testing.T) {
 	h, tg, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
-	id, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 2, RunID: 3, Repo: "a/b", Status: storage.RetryStatusExpired})
+	id, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 3, Repo: "a/b", Status: database.RetryStatusExpired})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -197,7 +197,7 @@ func TestHandleCallbackRerunError(t *testing.T) {
 	h, tg, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
-	id, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: storage.RetryStatusPending})
+	id, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -227,7 +227,7 @@ func TestHandleCallbackRerunError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRetry() error = %v", err)
 	}
-	if rec.Status != storage.RetryStatusPending {
+	if rec.Status != database.RetryStatusPending {
 		t.Errorf("status = %q, want to remain pending after a failed retry attempt", rec.Status)
 	}
 }
@@ -236,7 +236,7 @@ func TestHandleCallbackRerunErrorEscapesHTML(t *testing.T) {
 	h, tg, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
-	id, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 2, RunID: 1, Repo: "acme/widgets", Status: storage.RetryStatusPending})
+	id, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 1, Repo: "acme/widgets", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	h, tg, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
-	id, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: storage.RetryStatusPending})
+	id, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -276,8 +276,8 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRetry() error = %v", err)
 	}
-	if rec.Status != storage.RetryStatusRetried {
-		t.Errorf("status = %q, want %q", rec.Status, storage.RetryStatusRetried)
+	if rec.Status != database.RetryStatusRetried {
+		t.Errorf("status = %q, want %q", rec.Status, database.RetryStatusRetried)
 	}
 }
 

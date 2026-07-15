@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot"
 )
 
 func TestTelegramWebhookWrongSecret(t *testing.T) {
@@ -63,7 +63,7 @@ func TestTelegramWebhookRetryCallbackRoutesToRetryHandler(t *testing.T) {
 	ts := newTestServer(t, []int64{111}, "secret")
 	ctx := context.Background()
 
-	id, err := ts.store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: storage.RetryStatusPending})
+	id, err := ts.store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}

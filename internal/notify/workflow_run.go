@@ -3,8 +3,8 @@ package notify
 import (
 	"context"
 
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/retry"
+	"hedwig/internal/telegrambot"
 	"github.com/google/go-github/v66/github"
 )
 

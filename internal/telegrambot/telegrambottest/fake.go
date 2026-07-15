@@ -6,7 +6,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/telegrambot"
 )
 
 // SentMessage records a single SendMessage or EditMessage call.

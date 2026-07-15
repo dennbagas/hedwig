@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/btse/hedwig/internal/telegrambot/telegrambottest"
+	"hedwig/internal/telegrambot/telegrambottest"
 	"github.com/google/go-github/v66/github"
 	"go.uber.org/zap"
 )

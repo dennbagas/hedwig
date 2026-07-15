@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/telegrambot"
 	"go.uber.org/zap"
 )
 

@@ -10,14 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/btse/hedwig/internal/config"
-	"github.com/btse/hedwig/internal/githubapp"
-	"github.com/btse/hedwig/internal/httpserver"
-	"github.com/btse/hedwig/internal/logging"
-	"github.com/btse/hedwig/internal/notify"
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/config"
+	"hedwig/internal/githubapp"
+	"hedwig/internal/httpserver"
+	"hedwig/internal/logging"
+	"hedwig/internal/notify"
+	"hedwig/internal/retry"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot"
 	"go.uber.org/zap"
 )
 
@@ -47,11 +47,11 @@ func run() error {
 		logger.Fatal("load config", zap.Error(err))
 	}
 
-	db, err := storage.Open(cfg.Database.Path)
+	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	store := storage.NewSQLiteRepository(db)
+	store := database.NewSQLiteRepository(db)
 
 	ghHTTPClient, err := githubapp.NewInstallationHTTPClient(
 		cfg.GitHub.AppID, cfg.GitHub.InstallationID, cfg.GitHub.PrivateKeyPath)

@@ -1,8 +1,8 @@
 package notify
 
 import (
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/retry"
+	"hedwig/internal/telegrambot"
 )
 
 // RegisterAll wires all event handlers onto d.

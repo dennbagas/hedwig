@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/btse/hedwig/internal/githubapp/githubapptest"
-	"github.com/btse/hedwig/internal/notify"
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot/telegrambottest"
+	"hedwig/internal/githubapp/githubapptest"
+	"hedwig/internal/notify"
+	"hedwig/internal/retry"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot/telegrambottest"
 	"go.uber.org/zap"
 )
 
@@ -20,22 +20,22 @@ type testServer struct {
 	*Server
 	tg    *telegrambottest.FakeClient
 	gh    *githubapptest.FakeClient
-	store storage.Repository
+	store database.Repository
 }
 
 func newTestServer(t *testing.T, allowedUserIDs []int64, telegramSecret string) *testServer {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
-	db, err := storage.Open(path)
+	db, err := database.Open(path)
 	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
+		t.Fatalf("database.Open() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Errorf("db.Close() error = %v", err)
 		}
 	})
-	store := storage.NewSQLiteRepository(db)
+	store := database.NewSQLiteRepository(db)
 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()

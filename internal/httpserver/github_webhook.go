@@ -3,7 +3,7 @@ package httpserver
 import (
 	"net/http"
 
-	"github.com/btse/hedwig/internal/logging"
+	"hedwig/internal/logging"
 	"go.uber.org/zap"
 )
 

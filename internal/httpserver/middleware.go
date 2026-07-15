@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/btse/hedwig/internal/logging"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/logging"
+	"hedwig/internal/telegrambot"
 	"go.uber.org/zap"
 )
 

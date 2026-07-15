@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/btse/hedwig/internal/githubapp"
+	"hedwig/internal/githubapp"
 )
 
 // RerunCall records a single RerunFailedJobs call.

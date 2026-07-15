@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/telegrambot"
 	"github.com/google/go-github/v66/github"
 )
 

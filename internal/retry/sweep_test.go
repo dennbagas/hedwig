@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot/telegrambottest"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot/telegrambottest"
 	"go.uber.org/zap"
 )
 
@@ -16,11 +16,11 @@ func TestSweepExpiresOldPendingRetries(t *testing.T) {
 	tg := telegrambottest.New()
 	ctx := context.Background()
 
-	oldID, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: storage.RetryStatusPending})
+	oldID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(old) error = %v", err)
 	}
-	recentID, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: storage.RetryStatusPending})
+	recentID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(recent) error = %v", err)
 	}
@@ -40,16 +40,16 @@ func TestSweepExpiresOldPendingRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRetry(old) error = %v", err)
 	}
-	if oldRec.Status != storage.RetryStatusExpired {
-		t.Errorf("old status = %q, want %q", oldRec.Status, storage.RetryStatusExpired)
+	if oldRec.Status != database.RetryStatusExpired {
+		t.Errorf("old status = %q, want %q", oldRec.Status, database.RetryStatusExpired)
 	}
 
 	recentRec, err := store.GetRetry(ctx, recentID)
 	if err != nil {
 		t.Fatalf("GetRetry(recent) error = %v", err)
 	}
-	if recentRec.Status != storage.RetryStatusPending {
-		t.Errorf("recent status = %q, want unchanged %q", recentRec.Status, storage.RetryStatusPending)
+	if recentRec.Status != database.RetryStatusPending {
+		t.Errorf("recent status = %q, want unchanged %q", recentRec.Status, database.RetryStatusPending)
 	}
 }
 
@@ -59,11 +59,11 @@ func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
 	tg.RemoveKeyboardErr = errors.New("telegram is down")
 	ctx := context.Background()
 
-	firstID, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: storage.RetryStatusPending})
+	firstID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(first) error = %v", err)
 	}
-	secondID, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: storage.RetryStatusPending})
+	secondID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(second) error = %v", err)
 	}
@@ -84,8 +84,8 @@ func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetRetry(%d) error = %v", id, err)
 		}
-		if rec.Status != storage.RetryStatusExpired {
-			t.Errorf("retry %d status = %q, want %q despite the RemoveKeyboard error", id, rec.Status, storage.RetryStatusExpired)
+		if rec.Status != database.RetryStatusExpired {
+			t.Errorf("retry %d status = %q, want %q despite the RemoveKeyboard error", id, rec.Status, database.RetryStatusExpired)
 		}
 	}
 }
@@ -95,7 +95,7 @@ func TestSweepNoExpiredRows(t *testing.T) {
 	tg := telegrambottest.New()
 	ctx := context.Background()
 
-	if _, err := store.CreateRetry(ctx, storage.CICDRetry{ChatID: 1, MessageID: 1, RunID: 1, Repo: "a/b", Status: storage.RetryStatusPending}); err != nil {
+	if _, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 1, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending}); err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
 

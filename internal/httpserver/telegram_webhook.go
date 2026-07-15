@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/btse/hedwig/internal/logging"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/logging"
+	"hedwig/internal/telegrambot"
 	"github.com/go-telegram/bot/models"
 	"go.uber.org/zap"
 )

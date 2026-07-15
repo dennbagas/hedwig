@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btse/hedwig/internal/githubapp/githubapptest"
-	"github.com/btse/hedwig/internal/retry"
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot/telegrambottest"
+	"hedwig/internal/githubapp/githubapptest"
+	"hedwig/internal/retry"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot/telegrambottest"
 	"github.com/google/go-github/v66/github"
 	"go.uber.org/zap"
 )
@@ -20,16 +20,16 @@ import (
 func newTestRetryHandler(t *testing.T) (*retry.Handler, *telegrambottest.FakeClient, *githubapptest.FakeClient) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
-	db, err := storage.Open(path)
+	db, err := database.Open(path)
 	if err != nil {
-		t.Fatalf("storage.Open() error = %v", err)
+		t.Fatalf("database.Open() error = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := db.Close(); err != nil {
 			t.Errorf("db.Close() error = %v", err)
 		}
 	})
-	store := storage.NewSQLiteRepository(db)
+	store := database.NewSQLiteRepository(db)
 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()

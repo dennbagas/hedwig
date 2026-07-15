@@ -6,9 +6,9 @@ import (
 	"html"
 	"strconv"
 
-	"github.com/btse/hedwig/internal/githubapp"
-	"github.com/btse/hedwig/internal/storage"
-	"github.com/btse/hedwig/internal/telegrambot"
+	"hedwig/internal/githubapp"
+	"hedwig/internal/database"
+	"hedwig/internal/telegrambot"
 	"go.uber.org/zap"
 )
 
@@ -19,13 +19,13 @@ const (
 
 // Handler manages CI/CD retry state and Telegram interactions.
 type Handler struct {
-	store  storage.Repository
+	store  database.Repository
 	tg     telegrambot.Client
 	github githubapp.Client
 	logger *zap.Logger
 }
 
-func New(store storage.Repository, tg telegrambot.Client, gh githubapp.Client, logger *zap.Logger) *Handler {
+func New(store database.Repository, tg telegrambot.Client, gh githubapp.Client, logger *zap.Logger) *Handler {
 	return &Handler{store: store, tg: tg, github: gh, logger: logger}
 }
 
@@ -41,12 +41,12 @@ func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName,
 	}
 
 	// Persist the retry record before attaching the button so we have the ID for callback data.
-	retryID, err := h.store.CreateRetry(ctx, storage.CICDRetry{
+	retryID, err := h.store.CreateRetry(ctx, database.CICDRetry{
 		ChatID:    chatID,
 		MessageID: msgID,
 		RunID:     runID,
 		Repo:      fmt.Sprintf("%s/%s", owner, repo),
-		Status:    storage.RetryStatusPending,
+		Status:    database.RetryStatusPending,
 	})
 	if err != nil {
 		return fmt.Errorf("store retry record: %w", err)
@@ -74,7 +74,7 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 	if err != nil {
 		return fmt.Errorf("get retry record: %w", err)
 	}
-	if rec == nil || rec.Status != storage.RetryStatusPending {
+	if rec == nil || rec.Status != database.RetryStatusPending {
 		return h.tg.EditMessage(ctx, chatID, messageID, "This retry button is no longer valid.")
 	}
 
@@ -88,7 +88,7 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		return h.tg.EditMessage(ctx, chatID, messageID, text, telegrambot.WithParseMode("HTML"))
 	}
 
-	if err := h.store.UpdateRetryStatus(ctx, retryID, storage.RetryStatusRetried); err != nil {
+	if err := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusRetried); err != nil {
 		h.logger.Warn("failed to update retry status to retried", zap.Error(err))
 	}
 
