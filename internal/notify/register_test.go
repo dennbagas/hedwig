@@ -7,7 +7,7 @@ import (
 	"hedwig/internal/telegrambot/telegrambottest"
 
 	"github.com/google/go-github/v88/github"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // TestRegisterAllWiresEveryEventType dispatches one event of each type
@@ -17,7 +17,7 @@ import (
 // forgotten/mistyped Register call that those wouldn't.
 func TestRegisterAllWiresEveryEventType(t *testing.T) {
 	tg := telegrambottest.New()
-	d := NewDispatcher(tg, 1, zap.NewNop())
+	d := NewDispatcher(tg, 1, zerolog.Nop())
 	// retryH is nil: every event used below takes the workflow_run
 	// "requested" branch, which never touches it.
 	RegisterAll(d, tg, nil, 1)

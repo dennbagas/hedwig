@@ -5,7 +5,7 @@ tmp_dir = "tmp"
 
 [build]
   bin = "./tmp/bot"
-  cmd = "go build -o ./tmp/bot ./cmd/bot"
+  cmd = "go build -buildvcs=false -o ./tmp/bot ./cmd/bot"
   delay = 1000
   exclude_dir = ["tmp", "vendor", "testdata"]
   exclude_regex = ["_test.go"]

@@ -8,7 +8,7 @@ import (
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 type Server struct {
@@ -18,7 +18,7 @@ type Server struct {
 	retryH         *retry.Handler
 	allowedUserIDs []int64
 	telegramSecret string
-	logger         *zap.Logger
+	logger         zerolog.Logger
 	mux            *http.ServeMux
 }
 
@@ -31,7 +31,7 @@ func New(
 	telegramSecret string,
 	healthzPath string,
 	telegramWebhookPath string,
-	logger *zap.Logger,
+	logger zerolog.Logger,
 ) *Server {
 	s := &Server{
 		github:         gh,

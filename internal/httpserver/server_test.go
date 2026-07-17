@@ -10,7 +10,7 @@ import (
 	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot/telegrambottest"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // testServer wires a real *Server to a real notify.Dispatcher and
@@ -41,11 +41,11 @@ func newTestServer(t *testing.T, allowedUserIDs []int64, telegramSecret string) 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
 
-	retryH := retry.New(store, tg, gh, zap.NewNop())
-	notifyD := notify.NewDispatcher(tg, 999, zap.NewNop())
+	retryH := retry.New(store, tg, gh, zerolog.Nop())
+	notifyD := notify.NewDispatcher(tg, 999, zerolog.Nop())
 	notify.RegisterAll(notifyD, tg, retryH, 999)
 
-	srv := New(gh, store, notifyD, retryH, allowedUserIDs, telegramSecret, "/healthz", "/webhooks/telegram", zap.NewNop())
+	srv := New(gh, store, notifyD, retryH, allowedUserIDs, telegramSecret, "/healthz", "/webhooks/telegram", zerolog.Nop())
 
 	return &testServer{Server: srv, tg: tg, gh: gh, store: store}
 }

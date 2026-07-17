@@ -5,6 +5,7 @@ type Config struct {
 	GitHub   GitHubConfig   `koanf:"github"`
 	Telegram TelegramConfig `koanf:"telegram"`
 	Database DatabaseConfig `koanf:"database"`
+	Logging  LoggingConfig  `koanf:"logging"`
 }
 
 type ServerConfig struct {
@@ -31,3 +32,8 @@ type TelegramConfig struct {
 type DatabaseConfig struct {
 	Path string `koanf:"path" validate:"required"`
 }
+
+type LoggingConfig struct {
+	Level string `koanf:"level"`
+}
+

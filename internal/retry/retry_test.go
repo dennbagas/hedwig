@@ -14,7 +14,7 @@ import (
 	"hedwig/internal/telegrambot"
 	"hedwig/internal/telegrambot/telegrambottest"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // newTestRepo returns a real SQLite-backed repository (temp file, cleaned up
@@ -40,7 +40,7 @@ func newTestHandler(t *testing.T) (*Handler, *telegrambottest.FakeClient, *githu
 	_, store := newTestRepo(t)
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
-	return New(store, tg, gh, zap.NewNop()), tg, gh, store
+	return New(store, tg, gh, zerolog.Nop()), tg, gh, store
 }
 
 func TestNotifyFailureSuccess(t *testing.T) {
@@ -269,8 +269,11 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	if len(gh.RerunCalls) != 1 {
 		t.Fatalf("RerunCalls = %+v, want exactly one call", gh.RerunCalls)
 	}
-	if !strings.Contains(tg.Sent[0].Text, "Retrying") {
-		t.Errorf("text = %q, want it to mention retrying", tg.Sent[0].Text)
+	if len(tg.Sent) != 1 || !tg.Sent[0].Edited {
+		t.Fatalf("tg.Sent = %+v, want exactly one edited message", tg.Sent)
+	}
+	if !strings.Contains(tg.Sent[0].Text, "Retry request sent") {
+		t.Errorf("text = %q, want it to confirm the retry request was sent", tg.Sent[0].Text)
 	}
 
 	rec, err := store.GetRetry(ctx, id)

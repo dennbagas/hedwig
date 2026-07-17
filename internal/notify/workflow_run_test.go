@@ -12,7 +12,7 @@ import (
 	"hedwig/internal/telegrambot/telegrambottest"
 
 	"github.com/google/go-github/v88/github"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // newTestRetryHandler builds a real *retry.Handler backed by fakes and a
@@ -34,7 +34,7 @@ func newTestRetryHandler(t *testing.T) (*retry.Handler, *telegrambottest.FakeCli
 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
-	return retry.New(store, tg, gh, zap.NewNop()), tg, gh
+	return retry.New(store, tg, gh, zerolog.Nop()), tg, gh
 }
 
 func TestWorkflowRunHandlerRequested(t *testing.T) {
@@ -87,8 +87,6 @@ func TestWorkflowRunHandlerCompletedFailureDelegatesToRetry(t *testing.T) {
 		t.Fatalf("Handle() error = %v", err)
 	}
 
-	// retry.Handler.NotifyFailure sends the initial message, then edits it
-	// to attach the retry button.
 	if len(tg.Sent) != 2 {
 		t.Fatalf("len(tg.Sent) = %d, want 2 (send + button edit)", len(tg.Sent))
 	}

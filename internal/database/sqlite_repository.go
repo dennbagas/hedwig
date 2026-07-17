@@ -40,8 +40,8 @@ func (r *sqliteRepository) CleanOldDeliveries(ctx context.Context, olderThan tim
 
 func (r *sqliteRepository) CreateRetry(ctx context.Context, retry CICDRetry) (int64, error) {
 	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO cicd_retries (chat_id, message_id, run_id, repo, status) VALUES (?, ?, ?, ?, ?)`,
-		retry.ChatID, retry.MessageID, retry.RunID, retry.Repo, string(retry.Status))
+		`INSERT INTO cicd_retries (chat_id, message_id, run_id, repo, workflow_name, status) VALUES (?, ?, ?, ?, ?, ?)`,
+		retry.ChatID, retry.MessageID, retry.RunID, retry.Repo, retry.WorkflowName, string(retry.Status))
 	if err != nil {
 		return 0, fmt.Errorf("create retry: %w", err)
 	}
@@ -50,7 +50,7 @@ func (r *sqliteRepository) CreateRetry(ctx context.Context, retry CICDRetry) (in
 
 func (r *sqliteRepository) GetRetry(ctx context.Context, id int64) (*CICDRetry, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, chat_id, message_id, run_id, repo, status, created_at FROM cicd_retries WHERE id = ?`, id)
+		`SELECT id, chat_id, message_id, run_id, repo, workflow_name, status, created_at FROM cicd_retries WHERE id = ?`, id)
 	return scanRetry(row)
 }
 
@@ -69,7 +69,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	defer tx.Rollback() //nolint:errcheck
 
 	rows, err := tx.QueryContext(ctx,
-		`SELECT id, chat_id, message_id, run_id, repo, status, created_at
+		`SELECT id, chat_id, message_id, run_id, repo, workflow_name, status, created_at
 		 FROM cicd_retries WHERE status = 'pending' AND created_at < ?`, cutoff)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	for rows.Next() {
 		var retry CICDRetry
 		var status string
-		if err := rows.Scan(&retry.ID, &retry.ChatID, &retry.MessageID, &retry.RunID, &retry.Repo, &status, &retry.CreatedAt); err != nil {
+		if err := rows.Scan(&retry.ID, &retry.ChatID, &retry.MessageID, &retry.RunID, &retry.Repo, &retry.WorkflowName, &status, &retry.CreatedAt); err != nil {
 			return nil, err
 		}
 		retry.Status = RetryStatus(status)
@@ -112,7 +112,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 func scanRetry(row *sql.Row) (*CICDRetry, error) {
 	var r CICDRetry
 	var status string
-	err := row.Scan(&r.ID, &r.ChatID, &r.MessageID, &r.RunID, &r.Repo, &status, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.ChatID, &r.MessageID, &r.RunID, &r.Repo, &r.WorkflowName, &status, &r.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

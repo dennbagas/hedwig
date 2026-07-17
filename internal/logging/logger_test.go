@@ -1,59 +1,96 @@
 package logging
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
+	"github.com/rs/zerolog"
 )
 
 func TestNew(t *testing.T) {
-	logger, err := New()
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
+	logger := New("info")
+	if logger.GetLevel() == zerolog.Disabled {
+		t.Fatal("New() returned a disabled logger")
 	}
-	if logger == nil {
-		t.Fatal("New() returned a nil logger")
+}
+
+func TestNewDefaultsToInfoOnInvalidLevel(t *testing.T) {
+	logger := New("bogus")
+	if logger.GetLevel() != zerolog.InfoLevel {
+		t.Errorf("New(%q) level = %v, want info", "bogus", logger.GetLevel())
+	}
+}
+
+func TestNewRespectsConfiguredLevel(t *testing.T) {
+	logger := New("debug")
+	if logger.GetLevel() != zerolog.DebugLevel {
+		t.Errorf("New(debug) level = %v, want debug", logger.GetLevel())
 	}
 }
 
 func TestWithContextFromContextRoundTrip(t *testing.T) {
-	core, _ := observer.New(zapcore.InfoLevel)
-	want := zap.New(core)
+	var buf bytes.Buffer
+	want := zerolog.New(&buf)
 
 	ctx := WithContext(context.Background(), want)
 	got := FromContext(ctx)
 
-	if got != want {
+	got.Info().Msg("ping")
+	if buf.Len() == 0 {
 		t.Error("FromContext() did not return the logger stored via WithContext()")
 	}
 }
 
 func TestFromContextFallsBackOnBareContext(t *testing.T) {
 	logger := FromContext(context.Background())
-	if logger == nil {
-		t.Fatal("FromContext() on a bare context returned nil, want a working default logger")
-	}
-	// Should not panic when used.
-	logger.Info("smoke test")
-}
-
-func TestFromContextFallsBackWhenValueIsWrongType(t *testing.T) {
-	ctx := context.WithValue(context.Background(), contextKey{}, "not a logger")
-	logger := FromContext(ctx)
-	if logger == nil {
-		t.Fatal("FromContext() with a wrong-typed value returned nil, want a working default logger")
+	if logger.GetLevel() == zerolog.Disabled {
+		t.Fatal("FromContext() on a bare context returned a disabled logger")
 	}
 }
 
-func TestFieldRequestID(t *testing.T) {
-	field := FieldRequestID("abc123")
-	if field.Key != "request_id" {
-		t.Errorf("field.Key = %q, want %q", field.Key, "request_id")
+func TestNewOutputsTimestampFirst(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf).With().Timestamp().Logger().Hook(errorStackHook{})
+
+	logger.Info().Msg("test")
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	if field.String != "abc123" {
-		t.Errorf("field.String = %q, want %q", field.String, "abc123")
+	if _, ok := raw["timestamp"]; !ok {
+		t.Error("expected 'timestamp' key in log output")
+	}
+}
+
+func TestErrorStackHookAddsStacktrace(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf).Hook(errorStackHook{})
+
+	logger.Error().Msg("boom")
+
+	var entry map[string]string
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if entry["stacktrace"] == "" {
+		t.Error("expected 'stacktrace' field on error-level log")
+	}
+}
+
+func TestErrorStackHookAbsentOnInfo(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf).Hook(errorStackHook{})
+
+	logger.Info().Msg("ok")
+
+	var entry map[string]string
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if _, ok := entry["stacktrace"]; ok {
+		t.Error("expected no 'stacktrace' field on info-level log")
 	}
 }

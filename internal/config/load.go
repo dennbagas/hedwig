@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -22,6 +23,14 @@ var validate = validator.New()
 
 func Load(path string) (*Config, error) {
 	k := koanf.New(".")
+
+	if err := k.Load(confmap.Provider(map[string]any{
+		"logging.level":    "info",
+		"server.port":      8080,
+		"server.healthz_path": "/healthz",
+	}, "."), nil); err != nil {
+		return nil, fmt.Errorf("load defaults: %w", err)
+	}
 
 	if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
 		return nil, fmt.Errorf("load config file: %w", err)

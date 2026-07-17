@@ -7,12 +7,12 @@ import (
 	"hedwig/internal/database"
 	"hedwig/internal/telegrambot"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // RunSweep runs a periodic goroutine that expires pending retry buttons older than expiry.
 // It returns when ctx is cancelled.
-func RunSweep(ctx context.Context, store database.Repository, tg telegrambot.Client, interval, expiry time.Duration, logger *zap.Logger) {
+func RunSweep(ctx context.Context, store database.Repository, tg telegrambot.Client, interval, expiry time.Duration, logger zerolog.Logger) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -25,15 +25,15 @@ func RunSweep(ctx context.Context, store database.Repository, tg telegrambot.Cli
 	}
 }
 
-func sweep(ctx context.Context, store database.Repository, tg telegrambot.Client, expiry time.Duration, logger *zap.Logger) {
+func sweep(ctx context.Context, store database.Repository, tg telegrambot.Client, expiry time.Duration, logger zerolog.Logger) {
 	retries, err := store.ExpirePendingRetries(ctx, expiry)
 	if err != nil {
-		logger.Error("expire pending retries", zap.Error(err))
+		logger.Error().Err(err).Msg("expire pending retries")
 		return
 	}
 	for _, r := range retries {
 		if err := tg.RemoveKeyboard(ctx, r.ChatID, r.MessageID); err != nil {
-			logger.Warn("remove expired retry keyboard", zap.Error(err), zap.Int64("retry_id", r.ID))
+			logger.Warn().Err(err).Int64("retry_id", r.ID).Msg("remove expired retry keyboard")
 		}
 	}
 }

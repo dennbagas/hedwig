@@ -18,8 +18,6 @@ import (
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot"
-
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -37,16 +35,14 @@ func run() error {
 	configPath := flag.String("config", defaultConfig, "path to config file")
 	flag.Parse()
 
-	logger, err := logging.New()
-	if err != nil {
-		return fmt.Errorf("init logger: %w", err)
-	}
-	defer logger.Sync() //nolint:errcheck
+	logger := logging.New("info")
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		logger.Fatal("load config", zap.Error(err))
+		logger.Fatal().Err(err).Msg("load config")
 	}
+
+	logger = logging.New(cfg.Logging.Level)
 
 	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
@@ -94,7 +90,7 @@ func run() error {
 	go retry.RunSweep(ctx, store, tg, 30*time.Minute, 24*time.Hour, logger)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	logger.Info("starting server", zap.String("addr", addr))
+	logger.Info().Msg(fmt.Sprintf("starting http server on port: %d", cfg.Server.Port))
 
 	httpSrv := &http.Server{
 		Addr:              addr,

@@ -9,7 +9,7 @@ import (
 	"hedwig/internal/database"
 	"hedwig/internal/telegrambot/telegrambottest"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func TestSweepExpiresOldPendingRetries(t *testing.T) {
@@ -31,7 +31,7 @@ func TestSweepExpiresOldPendingRetries(t *testing.T) {
 		t.Fatalf("backdate old retry: %v", err)
 	}
 
-	sweep(ctx, store, tg, 24*time.Hour, zap.NewNop())
+	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
 
 	if len(tg.RemovedKeyboards) != 1 || tg.RemovedKeyboards[0].ChatID != 1 || tg.RemovedKeyboards[0].MessageID != 11 {
 		t.Errorf("RemovedKeyboards = %+v, want exactly the old row's (chatID=1, messageID=11)", tg.RemovedKeyboards)
@@ -76,9 +76,7 @@ func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
 		}
 	}
 
-	// Should not panic and should still process both rows in storage even
-	// though RemoveKeyboard fails for each.
-	sweep(ctx, store, tg, 24*time.Hour, zap.NewNop())
+	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
 
 	for _, id := range []int64{firstID, secondID} {
 		rec, err := store.GetRetry(ctx, id)
@@ -100,7 +98,7 @@ func TestSweepNoExpiredRows(t *testing.T) {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
 
-	sweep(ctx, store, tg, 24*time.Hour, zap.NewNop())
+	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
 
 	if len(tg.RemovedKeyboards) != 0 {
 		t.Errorf("RemovedKeyboards = %+v, want none when nothing has expired", tg.RemovedKeyboards)

@@ -12,7 +12,7 @@ import (
 	"hedwig/internal/telegrambot"
 
 	"github.com/go-telegram/bot/models"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
@@ -27,14 +27,14 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.Error("read telegram webhook body", zap.Error(err))
+		logger.Error().Err(err).Msg("read telegram webhook body")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	var update models.Update
 	if err := json.Unmarshal(body, &update); err != nil {
-		logger.Error("unmarshal telegram update", zap.Error(err))
+		logger.Error().Err(err).Msg("unmarshal telegram update")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -47,24 +47,24 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case update.CallbackQuery != nil:
 		if err := s.routeCallback(ctx, logger, update.CallbackQuery); err != nil {
-			logger.Error("route callback", zap.Error(err))
+			logger.Error().Err(err).Msg("route callback")
 		}
 	case update.Message != nil:
 		if err := s.routeMessage(ctx, logger, update.Message); err != nil {
-			logger.Error("route message", zap.Error(err))
+			logger.Error().Err(err).Msg("route message")
 		}
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *models.CallbackQuery) error {
+func (s *Server) routeCallback(ctx context.Context, logger zerolog.Logger, cq *models.CallbackQuery) error {
 	data := cq.Data
 	chatID, messageID := extractChatAndMessageID(&cq.Message)
 
 	feature, _, payload, err := telegrambot.DecodeCallback(data)
 	if err != nil {
-		logger.Warn("decode callback data", zap.Error(err), zap.String("data", data))
+		logger.Warn().Err(err).Str("data", data).Msg("decode callback data")
 		return nil
 	}
 
@@ -76,13 +76,13 @@ func (s *Server) routeCallback(ctx context.Context, logger *zap.Logger, cq *mode
 		}
 		return s.retryH.HandleCallback(ctx, cq.ID, chatID, messageID, retryID)
 	default:
-		logger.Warn("unknown callback feature", zap.String("feature", feature))
+		logger.Warn().Str("feature", feature).Msg("unknown callback feature")
 	}
 	return nil
 }
 
-func (s *Server) routeMessage(_ context.Context, logger *zap.Logger, msg *models.Message) error {
-	logger.Debug("unhandled command", zap.String("text", msg.Text))
+func (s *Server) routeMessage(_ context.Context, logger zerolog.Logger, msg *models.Message) error {
+	logger.Debug().Str("text", msg.Text).Msg("unhandled command")
 	return nil
 }
 

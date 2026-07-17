@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 type stubHandler struct {
@@ -20,7 +20,7 @@ func (s *stubHandler) Handle(_ context.Context, _ any) error {
 }
 
 func TestDispatcherRoutesToRegisteredHandler(t *testing.T) {
-	d := NewDispatcher(nil, 0, zap.NewNop())
+	d := NewDispatcher(nil, 0, zerolog.Nop())
 	h := &stubHandler{}
 	d.Register("push", h)
 
@@ -33,7 +33,7 @@ func TestDispatcherRoutesToRegisteredHandler(t *testing.T) {
 }
 
 func TestDispatcherUnknownEventTypeIsNoop(t *testing.T) {
-	d := NewDispatcher(nil, 0, zap.NewNop())
+	d := NewDispatcher(nil, 0, zerolog.Nop())
 	h := &stubHandler{}
 	d.Register("push", h)
 
@@ -46,7 +46,7 @@ func TestDispatcherUnknownEventTypeIsNoop(t *testing.T) {
 }
 
 func TestDispatcherWrapsHandlerError(t *testing.T) {
-	d := NewDispatcher(nil, 0, zap.NewNop())
+	d := NewDispatcher(nil, 0, zerolog.Nop())
 	d.Register("push", &stubHandler{err: errors.New("boom")})
 
 	err := d.Dispatch(context.Background(), "push", "x")

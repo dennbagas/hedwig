@@ -1,24 +1,25 @@
 package httpserver
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"hedwig/internal/logging"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
+	"github.com/rs/zerolog"
 )
 
 func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
-	var loggerInContext *zap.Logger
+	var loggerInContext zerolog.Logger
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		loggerInContext = logging.FromContext(r.Context())
 	})
 
-	handler := requestIDMiddleware(zap.NewNop())(next)
+	handler := requestIDMiddleware(zerolog.Nop())(next)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -28,7 +29,7 @@ func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
 	if id == "" {
 		t.Error("expected X-Request-ID header to be set")
 	}
-	if loggerInContext == nil {
+	if loggerInContext.GetLevel() == zerolog.Disabled {
 		t.Error("expected a logger to be attached to the request context")
 	}
 }
@@ -36,28 +37,27 @@ func TestRequestIDMiddlewareSetsHeaderAndContext(t *testing.T) {
 func TestRequestIDMiddlewareUsesTheConfiguredLogger(t *testing.T) {
 	// Regression test: requestIDMiddleware must derive the per-request
 	// logger from the logger it was constructed with, not fall back to
-	// logging.FromContext's default (a fresh zap.NewProduction() instance)
-	// just because the incoming request has no logger attached yet.
-	core, logs := observer.New(zapcore.InfoLevel)
-	configured := zap.New(core)
+	// logging.FromContext's default.
+	var buf bytes.Buffer
+	configured := zerolog.New(&buf).Level(zerolog.InfoLevel)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logging.FromContext(r.Context()).Info("from handler")
+		l := logging.FromContext(r.Context())
+		l.Info().Msg("from handler")
 	})
 
 	handler := requestIDMiddleware(configured)(next)
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
-	entries := logs.All()
-	if len(entries) != 1 || entries[0].Message != "from handler" {
-		t.Fatalf("logs = %+v, want exactly one entry logged through the configured logger", entries)
+	if !strings.Contains(buf.String(), "from handler") {
+		t.Fatalf("log output = %q, want it to contain 'from handler' logged through the configured logger", buf.String())
 	}
 }
 
 func TestRequestIDMiddlewareGeneratesUniqueIDs(t *testing.T) {
 	seen := make(map[string]bool)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
-	handler := requestIDMiddleware(zap.NewNop())(next)
+	handler := requestIDMiddleware(zerolog.Nop())(next)
 
 	for i := range 10 {
 		rec := httptest.NewRecorder()
@@ -71,8 +71,8 @@ func TestRequestIDMiddlewareGeneratesUniqueIDs(t *testing.T) {
 }
 
 func TestLoggingMiddlewareRecordsActualStatus(t *testing.T) {
-	core, logs := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core)
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf).Level(zerolog.InfoLevel)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -89,29 +89,27 @@ func TestLoggingMiddlewareRecordsActualStatus(t *testing.T) {
 		t.Errorf("response status = %d, want %d (should pass through unchanged)", rec.Code, http.StatusTeapot)
 	}
 
-	entries := logs.All()
-	if len(entries) != 1 {
-		t.Fatalf("logged entries = %d, want 1", len(entries))
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("log output is not valid JSON: %v — output: %s", err, buf.String())
 	}
-	ctxMap := entries[0].ContextMap()
-	status, ok := ctxMap["status"].(int64)
-	if !ok || int(status) != http.StatusTeapot {
-		t.Errorf("logged status = %v, want %d", ctxMap["status"], http.StatusTeapot)
+	if status, _ := entry["status"].(float64); int(status) != http.StatusTeapot {
+		t.Errorf("logged status = %v, want %d", entry["status"], http.StatusTeapot)
 	}
-	if method, _ := ctxMap["method"].(string); method != http.MethodGet {
-		t.Errorf("logged method = %v, want %q", ctxMap["method"], http.MethodGet)
+	if method, _ := entry["method"].(string); method != http.MethodGet {
+		t.Errorf("logged method = %v, want %q", entry["method"], http.MethodGet)
 	}
-	if path, _ := ctxMap["path"].(string); path != "/foo" {
-		t.Errorf("logged path = %v, want %q", ctxMap["path"], "/foo")
+	if path, _ := entry["path"].(string); path != "/foo" {
+		t.Errorf("logged path = %v, want %q", entry["path"], "/foo")
 	}
 }
 
 func TestLoggingMiddlewareDefaultsToOKWhenHandlerNeverWritesStatus(t *testing.T) {
-	core, logs := observer.New(zapcore.InfoLevel)
-	logger := zap.New(core)
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf).Level(zerolog.InfoLevel)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("hi")) // implicit 200, never calls WriteHeader directly
+		_, _ = w.Write([]byte("hi"))
 	})
 	handler := loggingMiddleware()(next)
 
@@ -120,9 +118,12 @@ func TestLoggingMiddlewareDefaultsToOKWhenHandlerNeverWritesStatus(t *testing.T)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	status, _ := logs.All()[0].ContextMap()["status"].(int64)
-	if int(status) != http.StatusOK {
-		t.Errorf("logged status = %d, want %d", status, http.StatusOK)
+	var entry map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("log output is not valid JSON: %v", err)
+	}
+	if status, _ := entry["status"].(float64); int(status) != http.StatusOK {
+		t.Errorf("logged status = %d, want %d", int(status), http.StatusOK)
 	}
 }
 

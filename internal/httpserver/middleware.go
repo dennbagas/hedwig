@@ -7,7 +7,7 @@ import (
 	"hedwig/internal/logging"
 	"hedwig/internal/telegrambot"
 
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 type statusRecorder struct {
@@ -20,12 +20,12 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-func requestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
+func requestIDMiddleware(logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := telegrambot.GenerateRequestID()
 			w.Header().Set("X-Request-ID", id)
-			reqLogger := logger.With(logging.FieldRequestID(id))
+			reqLogger := logger.With().Str("request_id", id).Logger()
 			ctx := logging.WithContext(r.Context(), reqLogger)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -38,12 +38,13 @@ func loggingMiddleware() func(http.Handler) http.Handler {
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			start := time.Now()
 			next.ServeHTTP(rec, r)
-			logging.FromContext(r.Context()).Info("request",
-				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path),
-				zap.Int("status", rec.status),
-				zap.Duration("duration", time.Since(start)),
-			)
+			l := logging.FromContext(r.Context())
+			l.Info().
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Int("status", rec.status).
+				Dur("duration", time.Since(start)).
+				Msg("request")
 		})
 	}
 }
