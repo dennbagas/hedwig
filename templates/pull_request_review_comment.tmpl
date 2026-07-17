@@ -1,0 +1,11 @@
+{{- if eq .Action "created" -}}
+📝 New review comment on PR #{{.PRNumber}}
+
+Title: {{.PRTitle}}
+Author: {{.Author}}
+File: {{.File}}{{if .Line}}:{{.Line}}{{end}}
+Comment: {{.Body}}
+
+Comment URL:
+{{.URL}}
+{{- end -}}

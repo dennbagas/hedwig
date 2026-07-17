@@ -28,6 +28,7 @@ func main() {
 }
 
 func run() error {
+	// Config path defaults to config.yaml; override with APP_CONFIG env var or -config flag.
 	defaultConfig := "config.yaml"
 	if v := os.Getenv("APP_CONFIG"); v != "" {
 		defaultConfig = v
@@ -35,6 +36,7 @@ func run() error {
 	configPath := flag.String("config", defaultConfig, "path to config file")
 	flag.Parse()
 
+	// Bootstrap with info-level logger until we can read the configured level.
 	logger := logging.New("info")
 
 	cfg, err := config.Load(*configPath)
@@ -44,12 +46,14 @@ func run() error {
 
 	logger = logging.New(cfg.Logging.Level)
 
+	// SQLite database — holds webhook delivery dedup records and pending CI retry state.
 	db, err := database.Open(cfg.Database.Path)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	store := database.NewSQLiteRepository(db)
 
+	// GitHub App client authenticated as an installation, used to validate webhooks and trigger reruns.
 	ghHTTPClient, err := githubapp.NewInstallationHTTPClient(
 		cfg.GitHub.AppID, cfg.GitHub.InstallationID, cfg.GitHub.PrivateKeyPath)
 	if err != nil {
@@ -69,14 +73,19 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Register the webhook URL with Telegram so it knows where to send updates.
 	if err := tg.SetWebhook(ctx, cfg.Telegram.WebhookURL, cfg.Telegram.WebhookSecret); err != nil {
 		return fmt.Errorf("set telegram webhook: %w", err)
 	}
 
+	// retry.Handler manages CI/CD failure notifications with inline retry buttons.
 	retryH := retry.New(store, tg, gh, logger)
 
-	notifyD := notify.NewDispatcher(tg, cfg.Telegram.ChatID, logger)
-	notify.RegisterAll(notifyD, tg, retryH, cfg.Telegram.ChatID)
+	// notify.Dispatcher routes each GitHub event type to its handler using templates loaded from disk.
+	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, retryH, cfg.Notifications.TemplatesDir, logger)
+	if err != nil {
+		return fmt.Errorf("load notification templates: %w", err)
+	}
 
 	srv := httpserver.New(
 		gh, store, notifyD, retryH,
@@ -87,6 +96,7 @@ func run() error {
 		logger,
 	)
 
+	// Background goroutine expires retry buttons older than 24 h every 30 minutes.
 	go retry.RunSweep(ctx, store, tg, 30*time.Minute, 24*time.Hour, logger)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
@@ -101,6 +111,7 @@ func run() error {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	// Graceful shutdown: wait for SIGINT/SIGTERM then give in-flight requests 10 s to finish.
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

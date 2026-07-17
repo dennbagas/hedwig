@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -41,9 +42,17 @@ func newTestServer(t *testing.T, allowedUserIDs []int64, telegramSecret string) 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
 
+	// Write a minimal push template so GitHub webhook tests get a real notification.
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "push.tmpl"), []byte(`{{.Repo}} {{.Pusher}}`), 0o600); err != nil {
+		t.Fatalf("write push template: %v", err)
+	}
+
 	retryH := retry.New(store, tg, gh, zerolog.Nop())
-	notifyD := notify.NewDispatcher(tg, 999, zerolog.Nop())
-	notify.RegisterAll(notifyD, tg, retryH, 999)
+	notifyD, err := notify.New(tg, 999, retryH, tmpDir, zerolog.Nop())
+	if err != nil {
+		t.Fatalf("notify.New() error = %v", err)
+	}
 
 	srv := New(gh, store, notifyD, retryH, allowedUserIDs, telegramSecret, "/healthz", "/webhooks/telegram", zerolog.Nop())
 

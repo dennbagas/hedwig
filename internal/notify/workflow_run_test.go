@@ -37,9 +37,22 @@ func newTestRetryHandler(t *testing.T) (*retry.Handler, *telegrambottest.FakeCli
 	return retry.New(store, tg, gh, zerolog.Nop()), tg, gh
 }
 
+// workflowRunLoader returns a loader with a template that covers all workflow_run actions.
+func workflowRunLoader(t *testing.T) *templateLoader {
+	t.Helper()
+	src := `{{- if eq .Action "requested" -}}CI/CD started: {{.Name}} {{.Repo}} on {{.Branch}}
+{{- else if eq .Action "completed" -}}CI/CD {{.Conclusion}}: {{.Name}} {{.Repo}}
+{{- end -}}`
+	l, err := newTemplateLoaderFromStrings(map[string]string{"workflow_run": src})
+	if err != nil {
+		t.Fatalf("newTemplateLoaderFromStrings() error = %v", err)
+	}
+	return l
+}
+
 func TestWorkflowRunHandlerRequested(t *testing.T) {
 	tg := telegrambottest.New()
-	h := &workflowRunHandler{tg: tg, chatID: 1}
+	h := &workflowRunHandler{tg: tg, chatID: 1, loader: workflowRunLoader(t)}
 	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
 		"action": "requested",
 		"workflow_run": {"name": "CI", "head_branch": "main", "html_url": "https://github.com/acme/widgets/actions/runs/1"},
@@ -59,7 +72,7 @@ func TestWorkflowRunHandlerRequested(t *testing.T) {
 
 func TestWorkflowRunHandlerCompletedSuccess(t *testing.T) {
 	tg := telegrambottest.New()
-	h := &workflowRunHandler{tg: tg, chatID: 1}
+	h := &workflowRunHandler{tg: tg, chatID: 1, loader: workflowRunLoader(t)}
 	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
 		"action": "completed",
 		"workflow_run": {"name": "CI", "conclusion": "success", "html_url": "https://github.com/acme/widgets/actions/runs/1"},
@@ -76,7 +89,7 @@ func TestWorkflowRunHandlerCompletedSuccess(t *testing.T) {
 
 func TestWorkflowRunHandlerCompletedFailureDelegatesToRetry(t *testing.T) {
 	retryH, tg, _ := newTestRetryHandler(t)
-	h := &workflowRunHandler{tg: tg, chatID: 1, retryH: retryH}
+	h := &workflowRunHandler{tg: tg, chatID: 1, retryH: retryH, loader: workflowRunLoader(t)}
 	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
 		"action": "completed",
 		"workflow_run": {"id": 55, "name": "CI", "conclusion": "failure", "html_url": "https://github.com/acme/widgets/actions/runs/55"},
@@ -90,17 +103,35 @@ func TestWorkflowRunHandlerCompletedFailureDelegatesToRetry(t *testing.T) {
 	if len(tg.Sent) != 2 {
 		t.Fatalf("len(tg.Sent) = %d, want 2 (send + button edit)", len(tg.Sent))
 	}
-	if !strings.Contains(tg.Sent[0].Text, "CI/CD failed") {
-		t.Errorf("text = %q, want it to say CI/CD failed", tg.Sent[0].Text)
+	if !strings.Contains(tg.Sent[0].Text, "CI/CD failure") {
+		t.Errorf("text = %q, want it to contain CI/CD failure", tg.Sent[0].Text)
 	}
 	if len(tg.Sent[1].Params.Keyboard) != 1 {
 		t.Errorf("expected the edited message to carry the retry button")
 	}
 }
 
+func TestWorkflowRunHandlerSkipsWhenNoTemplate(t *testing.T) {
+	tg := telegrambottest.New()
+	loader, _ := newTemplateLoaderFromStrings(map[string]string{}) // no workflow_run template
+	h := &workflowRunHandler{tg: tg, chatID: 1, loader: loader}
+	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
+		"action": "requested",
+		"workflow_run": {"name": "CI"},
+		"repository": {"full_name": "a/b"}
+	}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 0 {
+		t.Error("expected no message when no template is configured")
+	}
+}
+
 func TestWorkflowRunHandlerWrongEventType(t *testing.T) {
 	tg := telegrambottest.New()
-	h := &workflowRunHandler{tg: tg, chatID: 1}
+	h := &workflowRunHandler{tg: tg, chatID: 1, loader: workflowRunLoader(t)}
 	if err := h.Handle(context.Background(), &github.PushEvent{}); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}

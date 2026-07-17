@@ -43,11 +43,15 @@ func newTestHandler(t *testing.T) (*Handler, *telegrambottest.FakeClient, *githu
 	return New(store, tg, gh, zerolog.Nop()), tg, gh, store
 }
 
+const testFailureText = `CI/CD failed: <b>Build</b>
+acme/widgets
+<a href="https://github.com/acme/widgets/actions/runs/55">View run</a>`
+
 func TestNotifyFailureSuccess(t *testing.T) {
 	h, tg, _, store := newTestHandler(t)
 	ctx := context.Background()
 
-	err := h.NotifyFailure(ctx, 100, "Build", "acme", "widgets", 55, "https://github.com/acme/widgets/actions/runs/55")
+	err := h.NotifyFailure(ctx, 100, "Build", "acme", "widgets", 55, testFailureText)
 	if err != nil {
 		t.Fatalf("NotifyFailure() error = %v", err)
 	}
@@ -59,8 +63,8 @@ func TestNotifyFailureSuccess(t *testing.T) {
 	if sendMsg.Edited {
 		t.Error("first message should be a Send, not an Edit")
 	}
-	if !strings.Contains(sendMsg.Text, "Build") || !strings.Contains(sendMsg.Text, "acme/widgets") {
-		t.Errorf("sent text = %q, want it to mention the workflow name and repo", sendMsg.Text)
+	if sendMsg.Text != testFailureText {
+		t.Errorf("sent text = %q, want %q", sendMsg.Text, testFailureText)
 	}
 
 	editMsg := tg.Sent[1]
@@ -97,25 +101,8 @@ func TestNotifyFailureSuccess(t *testing.T) {
 	if rec.ChatID != 100 || rec.RunID != 55 || rec.Repo != "acme/widgets" || rec.Status != database.RetryStatusPending {
 		t.Errorf("persisted retry = %+v, want matching fields", rec)
 	}
-}
-
-func TestNotifyFailureEscapesHTML(t *testing.T) {
-	h, tg, _, _ := newTestHandler(t)
-
-	err := h.NotifyFailure(context.Background(), 1, "Build <prod>", "acme", "widgets & co", 1, "https://example.com")
-	if err != nil {
-		t.Fatalf("NotifyFailure() error = %v", err)
-	}
-
-	text := tg.Sent[0].Text
-	if strings.Contains(text, "<prod>") {
-		t.Errorf("text = %q, contains unescaped HTML", text)
-	}
-	if !strings.Contains(text, "&lt;prod&gt;") {
-		t.Errorf("text = %q, want the workflow name HTML-escaped", text)
-	}
-	if !strings.Contains(text, "widgets &amp; co") {
-		t.Errorf("text = %q, want the repo name HTML-escaped", text)
+	if rec.MessageText != testFailureText {
+		t.Errorf("persisted MessageText = %q, want %q", rec.MessageText, testFailureText)
 	}
 }
 
@@ -123,7 +110,7 @@ func TestNotifyFailureSendMessageError(t *testing.T) {
 	h, tg, _, store := newTestHandler(t)
 	tg.SendMessageErr = errors.New("telegram is down")
 
-	err := h.NotifyFailure(context.Background(), 1, "Build", "acme", "widgets", 1, "https://example.com")
+	err := h.NotifyFailure(context.Background(), 1, "Build", "acme", "widgets", 1, testFailureText)
 	if err == nil {
 		t.Fatal("NotifyFailure() error = nil, want the send failure to propagate")
 	}
@@ -138,7 +125,7 @@ func TestNotifyFailureButtonAttachErrorStillSucceeds(t *testing.T) {
 	h, tg, _, store := newTestHandler(t)
 	tg.EditMessageErr = errors.New("edit failed")
 
-	err := h.NotifyFailure(context.Background(), 1, "Build", "acme", "widgets", 1, "https://example.com")
+	err := h.NotifyFailure(context.Background(), 1, "Build", "acme", "widgets", 1, testFailureText)
 	if err != nil {
 		t.Fatalf("NotifyFailure() error = %v, want nil even though attaching the button failed", err)
 	}
@@ -257,7 +244,11 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	h, tg, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
-	id, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	id, err := store.CreateRetry(ctx, database.CICDRetry{
+		ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets",
+		MessageText: testFailureText,
+		Status:      database.RetryStatusPending,
+	})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -272,8 +263,9 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	if len(tg.Sent) != 1 || !tg.Sent[0].Edited {
 		t.Fatalf("tg.Sent = %+v, want exactly one edited message", tg.Sent)
 	}
-	if !strings.Contains(tg.Sent[0].Text, "Retry request sent") {
-		t.Errorf("text = %q, want it to confirm the retry request was sent", tg.Sent[0].Text)
+	wantText := testFailureText + "\n\n✅ Retry request sent"
+	if tg.Sent[0].Text != wantText {
+		t.Errorf("text = %q, want %q", tg.Sent[0].Text, wantText)
 	}
 
 	rec, err := store.GetRetry(ctx, id)

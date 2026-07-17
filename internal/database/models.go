@@ -17,6 +17,7 @@ type CICDRetry struct {
 	RunID        int64
 	Repo         string
 	WorkflowName string
+	MessageText  string
 	Status       RetryStatus
 	CreatedAt    time.Time
 }

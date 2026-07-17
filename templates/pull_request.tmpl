@@ -1,0 +1,18 @@
+{{- if eq .Action "opened" -}}
+📢 New Pull Request!
+
+Title: {{.Title}}
+Author: {{.Author}}
+
+Pull Request URL:
+{{.URL}}
+{{- else if and (eq .Action "closed") .Merged -}}
+✅ Pull Request Merged!
+
+Title: {{.Title}}
+Author: {{.Author}}
+Merged by: {{.MergedBy}}
+
+Pull Request URL:
+{{.URL}}
+{{- end -}}

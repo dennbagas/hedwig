@@ -1,11 +1,12 @@
 package config
 
 type Config struct {
-	Server   ServerConfig   `koanf:"server"`
-	GitHub   GitHubConfig   `koanf:"github"`
-	Telegram TelegramConfig `koanf:"telegram"`
-	Database DatabaseConfig `koanf:"database"`
-	Logging  LoggingConfig  `koanf:"logging"`
+	Server        ServerConfig        `koanf:"server"`
+	GitHub        GitHubConfig        `koanf:"github"`
+	Telegram      TelegramConfig      `koanf:"telegram"`
+	Database      DatabaseConfig      `koanf:"database"`
+	Logging       LoggingConfig       `koanf:"logging"`
+	Notifications NotificationsConfig `koanf:"notifications"`
 }
 
 type ServerConfig struct {
@@ -35,5 +36,9 @@ type DatabaseConfig struct {
 
 type LoggingConfig struct {
 	Level string `koanf:"level"`
+}
+
+type NotificationsConfig struct {
+	TemplatesDir string `koanf:"templates_dir" validate:"required,dir"`
 }
 

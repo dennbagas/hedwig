@@ -1,0 +1,21 @@
+{{- if eq .Action "completed" -}}
+{{- if eq .Conclusion "success" -}}
+✅ Build Pipeline succeeded
+Project: {{.Repo}}
+Tag: {{.Branch}}
+Commit: {{.HeadSHA}}
+URL: {{.URL}}
+{{- else if eq .Conclusion "failure" -}}
+❌ Build Pipeline failed
+Project: {{.Repo}}
+Tag: {{.Branch}}
+Commit: {{.HeadSHA}}
+URL: {{.URL}}
+{{- else -}}
+⚠️ Build Pipeline {{.Conclusion}}
+Project: {{.Repo}}
+Tag: {{.Branch}}
+Commit: {{.HeadSHA}}
+URL: {{.URL}}
+{{- end -}}
+{{- end -}}

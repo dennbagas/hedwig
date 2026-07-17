@@ -39,20 +39,21 @@ This document covers the notifications + CI/CD retry bot only.
 | Event | GitHub Webhook | Trigger Condition | Telegram Message Content |
 |---|---|---|---|
 | Push | `push` | any push | pusher, ref, commit summary |
-| PR opened | `pull_request` | `action == "opened"` | PR title, author, source→target branch, link |
-| Tag created | `create` | `ref_type == "tag"` | repo, tag name, pusher, link |
-| Branch created | `create` | `ref_type == "branch"` | repo, branch name, pusher, link |
-| PR closed | `pull_request` | `action == "closed"` | PR title, merged vs. closed-without-merge, link |
+| PR opened | `pull_request` | `action == "opened"` | PR title, author, link |
+| PR merged | `pull_request` | `action == "closed"` + merged | PR title, author, merged-by, link |
+| Branch created | `create` | `ref_type == "branch"` | repo, branch name, creator |
+| Release published | `release` | `action == "published"` | tag name, repo, author, release notes body, link |
 | PR comment | `issue_comment` | `action == "created"` and `issue.pull_request` is present | PR title, commenter, comment excerpt, link |
 | PR review | `pull_request_review` | `action == "submitted"` | PR title, reviewer, review state (approved/changes requested/commented), link |
 | PR review comment | `pull_request_review_comment` | `action == "created"` | PR title, commenter, file/line, comment excerpt, link |
-| CI/CD started | `workflow_run` | `action == "requested"` | workflow name, repo, branch, link |
-| CI/CD status | `workflow_run` | `action == "completed"` | workflow name, repo, conclusion (success/failure/cancelled), link; **retry button attached only on failure** |
+| CI/CD status | `workflow_run` | `action == "completed"` | workflow name, repo, tag/branch, commit SHA, link; **retry button attached only on failure** |
 
 All dynamic content embedded in these HTML-parse-mode messages (commit
 messages, PR titles/bodies, comment excerpts, branch/tag names, usernames) is
 HTML-escaped before being sent, so `<`/`>`/`&` in GitHub-supplied content can't
 break message delivery or inject markup into the Telegram message.
+
+Message content and action filtering are fully configurable via Go `text/template` files — one per event type — mounted into the container (see Section 7.2). A template that produces empty output silently skips the notification, which is how per-action filtering is implemented.
 
 ### 5.2 CI/CD Retry Button
 
@@ -61,7 +62,7 @@ break message delivery or inject markup into the Telegram message.
 - On tap:
   1. Answer the callback query immediately (avoids stuck loading spinner).
   2. Call the GitHub rerun-failed-jobs API using the stored `run_id`. Since the sweep (5.2.1) removes the button before the 24-hour window closes, every tap reaching this step is within the valid window.
-  3. On success: edit the message to remove the button and indicate "Retrying...".
+  3. On success: edit the original message to append "✅ Retry request sent" (button remains for reference).
   4. On failure (e.g. run still active, already running): edit the message to show a plain error including a link back to the GitHub Actions run, so the user can check status or retry manually from GitHub if needed. Keep the record `pending` so a later tap can still be attempted within the expiry window.
 
 #### 5.2.1 Button Expiry
@@ -107,7 +108,7 @@ This system is deliberately scoped down. Each item below is a conscious tradeoff
 
 Configuration is layered from two sources, loaded via `koanf`:
 
-1. **File (YAML or TOML)** — non-secret structural config: repository allowlist, listen port, GitHub App private key path.
+1. **File (YAML or TOML)** — non-secret structural config: listen port, GitHub App private key path, notification templates directory.
 2. **Environment variables** — secrets: Telegram bot token, GitHub webhook secret, Telegram webhook secret token. Env vars override/fill in on top of the file, using a configurable prefix (e.g. `APP_`).
 
 The **GitHub App private key** is provided as a **file path** in config (e.g. `github.private_key_path`, itself overridable via file or env), pointing to a Kubernetes Secret mounted as a volume at startup. This keeps the private key out of `os.Environ()` and process/crash dumps.
@@ -145,8 +146,9 @@ CREATE TABLE cicd_retries (
 | Pull requests | Read | `pull_request`, `pull_request_review`, `pull_request_review_comment` events |
 | Issues | Read | `issue_comment` events (fires for both issue and PR comments; PR comments are distinguished by the presence of `issue.pull_request` in the payload) |
 | Actions | Read & Write | `workflow_run` events (read) + rerun-failed-jobs (write) |
+| Contents | Read | `release` events |
 
-Webhook subscriptions to enable on the GitHub App registration: `push`, `create`, `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`.
+Webhook subscriptions to enable on the GitHub App registration: `push`, `create`, `pull_request`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `release`.
 
 (Phase 2 — see [`docs/phase-2-pr-creation.md`](phase-2-pr-creation.md) — will need Pull Requests write access again once implemented.)
 

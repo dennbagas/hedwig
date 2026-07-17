@@ -4,13 +4,25 @@ A service that bridges GitHub webhooks to Telegram notifications, with a CI/CD r
 
 ## Features
 
-- Relays GitHub events (push, PR, CI/CD status) to a Telegram chat
+- Relays GitHub events (push, PR, releases, CI/CD status) to a Telegram chat
+- Fully configurable notification templates — one Go `text/template` file per event type, hot-swappable via Kubernetes ConfigMap
 - Retry button on failed CI/CD runs — one tap re-triggers the workflow
 - Deduplicates GitHub webhook retries via delivery ID tracking
 - Single GitHub App identity + single Telegram bot
 
-See the [Phase 1 PRD](docs/phase-1-notifications.md) for full requirements and design.
-A [Phase 2 PR-creation feature](docs/phase-2-pr-creation.md) is planned but not yet implemented.
+## Supported Events
+
+| Event | Webhook | Default behavior |
+|---|---|---|
+| Push | `push` | Always notifies |
+| Pull request opened | `pull_request` | Notifies on `opened` |
+| Pull request merged | `pull_request` | Notifies on `closed` + merged |
+| PR comment | `issue_comment` | Notifies on `created` (PR comments only) |
+| PR review | `pull_request_review` | Notifies on `submitted` |
+| PR review comment | `pull_request_review_comment` | Notifies on `created` |
+| Branch created | `create` | Notifies on `branch` type |
+| Release published | `release` | Notifies on `published` |
+| CI/CD completed | `workflow_run` | Notifies on `completed`; attaches retry button on failure |
 
 ## Prerequisites
 
@@ -52,7 +64,10 @@ make test
 
 ```bash
 docker build -t hedwig .
-docker run -v /path/to/config.yaml:/app/config.yaml hedwig
+docker run \
+  -v /path/to/config.yaml:/app/config.yaml \
+  -v /path/to/templates:/etc/hedwig/templates \
+  hedwig
 ```
 
 ## Configuration
@@ -67,3 +82,23 @@ Secrets should be set via env vars rather than the file:
 | `APP_TELEGRAM_WEBHOOK_SECRET` | `telegram.webhook_secret` |
 
 See `config.example.yaml` for all available fields.
+
+## Notification Templates
+
+Each event type has a corresponding `.tmpl` file in the configured templates directory (default: `/etc/hedwig/templates`). Templates are standard Go `text/template` files — they receive a typed context struct and produce the Telegram message text.
+
+Default templates live in [`templates/`](templates/) at the project root. Copy them as a starting point:
+
+```bash
+cp templates/ /etc/hedwig/templates/
+```
+
+A template that produces empty output silently skips the notification, which is how action filtering works:
+
+```
+{{- if eq .Action "opened" -}}
+📢 New Pull Request: {{.Title}}
+{{- end -}}
+```
+
+All string fields in context structs are pre-HTML-escaped, so templates are safe to use with Telegram's `HTML` parse mode.

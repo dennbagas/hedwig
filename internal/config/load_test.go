@@ -84,7 +84,10 @@ telegram:
 
 database:
   path: /data/hedwig.db
-`, o.port, o.keyPath, o.githubWebhookSecret, o.allowedUserIDsYAML)
+
+notifications:
+  templates_dir: %s
+`, o.port, o.keyPath, o.githubWebhookSecret, o.allowedUserIDsYAML, o.templatesDir)
 }
 
 type overrides struct {
@@ -92,6 +95,7 @@ type overrides struct {
 	keyPath             string
 	githubWebhookSecret string
 	allowedUserIDsYAML  string
+	templatesDir        string
 }
 
 func (o *overrides) applyDefaults() {
@@ -103,6 +107,9 @@ func (o *overrides) applyDefaults() {
 	}
 	if o.allowedUserIDsYAML == "" {
 		o.allowedUserIDsYAML = "    - 111222333"
+	}
+	if o.templatesDir == "" {
+		o.templatesDir = os.TempDir()
 	}
 }
 

@@ -1,0 +1,9 @@
+{{- if eq .Action "submitted" -}}
+👀 PR Review — {{.State}}
+
+Title: {{.PRTitle}}
+Reviewer: {{.Reviewer}}
+
+Review URL:
+{{.URL}}
+{{- end -}}

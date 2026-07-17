@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"strconv"
+	"strings"
 
 	"hedwig/internal/database"
 	"hedwig/internal/githubapp"
@@ -30,11 +31,10 @@ func New(store database.Repository, tg telegrambot.Client, gh githubapp.Client, 
 	return &Handler{store: store, tg: tg, github: gh, logger: logger}
 }
 
-// NotifyFailure sends the CI/CD failure message with a retry button and persists the retry record.
-func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName, owner, repo string, runID int64, runURL string) error {
-	text := fmt.Sprintf("CI/CD failed: <b>%s</b>\n%s/%s\n<a href=\"%s\">View run</a>",
-		html.EscapeString(workflowName), html.EscapeString(owner), html.EscapeString(repo), html.EscapeString(runURL))
-
+// NotifyFailure sends a pre-rendered failure message with a retry button and
+// persists the retry record. text is the HTML rendered by the notification
+// template; it is stored so the button-click handler can append to it later.
+func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName, owner, repo string, runID int64, text string) error {
 	msgID, err := h.tg.SendMessage(ctx, chatID, text, telegrambot.WithParseMode("HTML"))
 	if err != nil {
 		return fmt.Errorf("send failure notification: %w", err)
@@ -46,6 +46,7 @@ func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName,
 		RunID:        runID,
 		Repo:         fmt.Sprintf("%s/%s", owner, repo),
 		WorkflowName: workflowName,
+		MessageText:  text,
 		Status:       database.RetryStatusPending,
 	})
 	if err != nil {
@@ -91,8 +92,7 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 	}
 
 	h.logger.Info().Int64("retry_id", retryID).Int64("run_id", rec.RunID).Str("repo", rec.Repo).Msg("retry triggered")
-	text := fmt.Sprintf("CI/CD failed: <b>%s</b>\n%s\n<a href=\"https://github.com/%s/actions/runs/%d\">View run</a>\n\n✅ Retry request sent",
-		html.EscapeString(rec.WorkflowName), html.EscapeString(rec.Repo), html.EscapeString(rec.Repo), rec.RunID)
+	text := strings.TrimRight(rec.MessageText, "\n") + "\n\n✅ Retry request sent"
 	return h.tg.EditMessage(ctx, chatID, messageID, text, telegrambot.WithParseMode("HTML"))
 }
 
