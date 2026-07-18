@@ -15,4 +15,12 @@ Merged by: {{.MergedBy}}
 
 Pull Request URL:
 {{.URL}}
+{{- else if and (eq .Action "closed") (not .Merged) -}}
+🚫 Pull Request Closed!
+
+Title: {{.Title}}
+Author: {{.Author}}
+
+Pull Request URL:
+{{.URL}}
 {{- end -}}

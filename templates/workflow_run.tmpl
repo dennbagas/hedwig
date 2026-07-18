@@ -1,4 +1,4 @@
-{{- if eq .Action "completed" -}}
+{{- if and (eq .Action "completed") (eq .Name "Build and Deploy") -}}
 {{- if eq .Conclusion "success" -}}
 ✅ Build Pipeline succeeded
 Project: {{.Repo}}

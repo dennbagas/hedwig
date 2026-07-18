@@ -35,7 +35,7 @@ func (h *releaseHandler) Handle(ctx context.Context, event any) error {
 		Action:     e.GetAction(),
 		TagName:    esc(rel.GetTagName()),
 		Name:       esc(rel.GetName()),
-		Body:       rel.GetBody(), // release notes may contain markdown; not HTML-escaped
+		Body:       esc(rel.GetBody()),
 		Author:     esc(rel.GetAuthor().GetLogin()),
 		Repo:       esc(e.GetRepo().GetFullName()),
 		URL:        esc(rel.GetHTMLURL()),
