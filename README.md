@@ -70,6 +70,18 @@ docker run \
   hedwig
 ```
 
+## Kubernetes
+
+See [docs/kubernetes.md](docs/deployments/kubernetes.md) for a full guide covering:
+
+- Creating secrets (GitHub App key, bot tokens, webhook secrets)
+- ConfigMaps for `config.yaml` and notification templates
+- Deployment, Service, and Ingress manifests
+- Updating templates without a pod restart
+- Upgrading the image
+
+Pre-built images are published to `ghcr.io/dennbagas/hedwig` on every tagged release.
+
 ## Configuration
 
 All config is in `config.yaml` (YAML) with `APP_`-prefixed env var overrides.
