@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"strings"
 
 	"hedwig/internal/telegrambot"
 
@@ -11,6 +12,7 @@ import (
 type PushContext struct {
 	Repo    string
 	Ref     string
+	RefType string // "branch" or "tag"
 	Pusher  string
 	Commits int
 	Summary string
@@ -31,9 +33,15 @@ func (h *pushHandler) Handle(ctx context.Context, event any) error {
 	if e.GetHeadCommit() != nil {
 		summary = esc(truncate(e.GetHeadCommit().GetMessage(), 80))
 	}
+	rawRef := e.GetRef()
+	refType := "branch"
+	if strings.HasPrefix(rawRef, "refs/tags/") {
+		refType = "tag"
+	}
 	text, err := h.loader.render("push", PushContext{
 		Repo:    esc(e.GetRepo().GetFullName()),
-		Ref:     esc(shortRef(e.GetRef())),
+		Ref:     esc(shortRef(rawRef)),
+		RefType: refType,
 		Pusher:  esc(e.GetPusher().GetName()),
 		Commits: len(e.Commits),
 		Summary: summary,
