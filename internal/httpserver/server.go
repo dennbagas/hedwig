@@ -18,6 +18,7 @@ type Server struct {
 	retryH         *retry.Handler
 	allowedUserIDs []int64
 	telegramSecret string
+	healthzPath    string
 	logger         zerolog.Logger
 	mux            *http.ServeMux
 }
@@ -40,6 +41,7 @@ func New(
 		retryH:         retryH,
 		allowedUserIDs: allowedUserIDs,
 		telegramSecret: telegramSecret,
+		healthzPath:    healthzPath,
 		logger:         logger,
 		mux:            http.NewServeMux(),
 	}
@@ -54,6 +56,6 @@ func New(
 func (s *Server) Handler() http.Handler {
 	return chain(s.mux,
 		requestIDMiddleware(s.logger),
-		loggingMiddleware(),
+		loggingMiddleware(s.healthzPath),
 	)
 }

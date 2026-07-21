@@ -32,9 +32,17 @@ func requestIDMiddleware(logger zerolog.Logger) func(http.Handler) http.Handler 
 	}
 }
 
-func loggingMiddleware() func(http.Handler) http.Handler {
+func loggingMiddleware(skipPaths ...string) func(http.Handler) http.Handler {
+	skip := make(map[string]struct{}, len(skipPaths))
+	for _, p := range skipPaths {
+		skip[p] = struct{}{}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := skip[r.URL.Path]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			start := time.Now()
 			next.ServeHTTP(rec, r)
