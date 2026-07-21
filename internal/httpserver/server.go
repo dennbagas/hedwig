@@ -54,8 +54,9 @@ func New(
 }
 
 func (s *Server) Handler() http.Handler {
+	skipRequestLogForPath := []string{s.healthzPath}
 	return chain(s.mux,
 		requestIDMiddleware(s.logger),
-		loggingMiddleware(s.healthzPath),
+		loggingMiddleware(skipRequestLogForPath...),
 	)
 }
