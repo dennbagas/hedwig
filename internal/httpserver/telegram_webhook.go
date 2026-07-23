@@ -40,6 +40,15 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !telegrambot.IsAllowed(s.allowedUserIDs, &update) {
+		if update.CallbackQuery != nil {
+			logger.Warn().
+				Int64("user_id", update.CallbackQuery.From.ID).
+				Str("username", update.CallbackQuery.From.Username).
+				Msg("unauthorized user attempted callback")
+			if err := s.tg.AnswerCallback(ctx, update.CallbackQuery.ID, "You're not authorized to use this."); err != nil {
+				logger.Error().Err(err).Msg("answer unauthorized callback")
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}

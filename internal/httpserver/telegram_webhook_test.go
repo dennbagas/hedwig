@@ -59,6 +59,29 @@ func TestTelegramWebhookDisallowedUser(t *testing.T) {
 	}
 }
 
+func TestTelegramWebhookDisallowedUserCallbackGetsToast(t *testing.T) {
+	ts := newTestServer(t, []int64{111}, "secret")
+
+	cb := telegrambot.EncodeCallback("retry", "trigger", "1")
+	body := fmt.Sprintf(`{"update_id":1,"callback_query":{"id":"cbq-1","from":{"id":999,"is_bot":false},"message":{"message_id":2,"date":0,"chat":{"id":1,"type":"private"}},"data":%q}}`, cb)
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/telegram", strings.NewReader(body))
+	req.Header.Set("X-Telegram-Bot-Api-Secret-Token", "secret")
+	rec := httptest.NewRecorder()
+
+	ts.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if len(ts.gh.RerunCalls) != 0 {
+		t.Error("expected no GitHub calls for a disallowed user")
+	}
+	if len(ts.tg.AnsweredCallbacks) != 1 || ts.tg.AnsweredCallbacks[0].CallbackQueryID != "cbq-1" {
+		t.Fatalf("AnsweredCallbacks = %+v, want a denial toast answered for cbq-1", ts.tg.AnsweredCallbacks)
+	}
+}
+
 func TestTelegramWebhookRetryCallbackRoutesToRetryHandler(t *testing.T) {
 	ts := newTestServer(t, []int64{111}, "secret")
 	ctx := context.Background()
