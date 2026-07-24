@@ -22,12 +22,11 @@ type GitHubConfig struct {
 }
 
 type TelegramConfig struct {
-	BotToken       string  `koanf:"bot_token"       validate:"required"`
-	WebhookSecret  string  `koanf:"webhook_secret"  validate:"required"`
-	WebhookPath    string  `koanf:"webhook_path"    validate:"required"`
-	WebhookURL     string  `koanf:"webhook_url"     validate:"required,url"`
-	ChatID         int64   `koanf:"chat_id"         validate:"required"`
-	AllowedUserIDs []int64 `koanf:"allowed_user_ids" validate:"required,min=1"`
+	BotToken      string `koanf:"bot_token"      validate:"required"`
+	WebhookSecret string `koanf:"webhook_secret" validate:"required"`
+	WebhookPath   string `koanf:"webhook_path"   validate:"required"`
+	WebhookURL    string `koanf:"webhook_url"    validate:"required,url"`
+	ChatID        int64  `koanf:"chat_id"        validate:"required"`
 }
 
 type DatabaseConfig struct {

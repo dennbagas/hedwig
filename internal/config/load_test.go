@@ -79,22 +79,19 @@ telegram:
   webhook_path: /webhooks/telegram
   webhook_url: https://hedwig.example.com/webhooks/telegram
   chat_id: -100123456789
-  allowed_user_ids:
-%s
 
 database:
   path: /data/hedwig.db
 
 notifications:
   templates_dir: %s
-`, o.port, o.keyPath, o.githubWebhookSecret, o.allowedUserIDsYAML, o.templatesDir)
+`, o.port, o.keyPath, o.githubWebhookSecret, o.templatesDir)
 }
 
 type overrides struct {
 	port                string
 	keyPath             string
 	githubWebhookSecret string
-	allowedUserIDsYAML  string
 	templatesDir        string
 }
 
@@ -104,9 +101,6 @@ func (o *overrides) applyDefaults() {
 	}
 	if o.githubWebhookSecret == "" {
 		o.githubWebhookSecret = "test-github-secret"
-	}
-	if o.allowedUserIDsYAML == "" {
-		o.allowedUserIDsYAML = "    - 111222333"
 	}
 	if o.templatesDir == "" {
 		o.templatesDir = os.TempDir()
@@ -138,9 +132,6 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.GitHub.AppID != 123456 {
 		t.Errorf("GitHub.AppID = %d, want 123456", cfg.GitHub.AppID)
-	}
-	if len(cfg.Telegram.AllowedUserIDs) != 1 || cfg.Telegram.AllowedUserIDs[0] != 111222333 {
-		t.Errorf("Telegram.AllowedUserIDs = %v, want [111222333]", cfg.Telegram.AllowedUserIDs)
 	}
 }
 
@@ -193,10 +184,6 @@ func TestLoadValidationFailures(t *testing.T) {
 			yaml: baseYAML(overrides{keyPath: keyPath, port: "0"}),
 		},
 		{
-			name: "empty allowed_user_ids",
-			yaml: baseYAML(overrides{keyPath: keyPath, allowedUserIDsYAML: "    []"}),
-		},
-		{
 			name: "nonexistent private key path",
 			yaml: baseYAML(overrides{keyPath: filepath.Join(dir, "does-not-exist.pem")}),
 		},
@@ -234,8 +221,6 @@ telegram:
   webhook_path: /webhooks/telegram
   webhook_url: https://hedwig.example.com/webhooks/telegram
   chat_id: -100123456789
-  allowed_user_ids:
-    - 111222333
 
 database:
   path: /data/hedwig.db

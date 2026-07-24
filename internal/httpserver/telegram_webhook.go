@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"hedwig/internal/logging"
+	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot"
 
 	"github.com/go-telegram/bot/models"
@@ -39,20 +40,6 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !telegrambot.IsAllowed(s.allowedUserIDs, &update) {
-		if update.CallbackQuery != nil {
-			logger.Warn().
-				Int64("user_id", update.CallbackQuery.From.ID).
-				Str("username", update.CallbackQuery.From.Username).
-				Msg("unauthorized user attempted callback")
-			if err := s.tg.AnswerCallback(ctx, update.CallbackQuery.ID, "You're not authorized to use this."); err != nil {
-				logger.Error().Err(err).Msg("answer unauthorized callback")
-			}
-		}
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	switch {
 	case update.CallbackQuery != nil:
 		if err := s.routeCallback(ctx, logger, update.CallbackQuery); err != nil {
@@ -78,7 +65,7 @@ func (s *Server) routeCallback(ctx context.Context, logger zerolog.Logger, cq *m
 	}
 
 	switch feature {
-	case "retry":
+	case retry.CallbackFeature:
 		retryID, err := strconv.ParseInt(payload, 10, 64)
 		if err != nil {
 			return nil

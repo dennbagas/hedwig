@@ -7,7 +7,6 @@ import (
 	"hedwig/internal/githubapp"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
-	"hedwig/internal/telegrambot"
 
 	"github.com/rs/zerolog"
 )
@@ -17,8 +16,6 @@ type Server struct {
 	store          database.Repository
 	notifyD        *notify.Dispatcher
 	retryH         *retry.Handler
-	tg             telegrambot.Client
-	allowedUserIDs []int64
 	telegramSecret string
 	healthzPath    string
 	logger         zerolog.Logger
@@ -30,8 +27,6 @@ func New(
 	store database.Repository,
 	notifyD *notify.Dispatcher,
 	retryH *retry.Handler,
-	tg telegrambot.Client,
-	allowedUserIDs []int64,
 	telegramSecret string,
 	healthzPath string,
 	telegramWebhookPath string,
@@ -42,8 +37,6 @@ func New(
 		store:          store,
 		notifyD:        notifyD,
 		retryH:         retryH,
-		tg:             tg,
-		allowedUserIDs: allowedUserIDs,
 		telegramSecret: telegramSecret,
 		healthzPath:    healthzPath,
 		logger:         logger,

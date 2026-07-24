@@ -22,7 +22,7 @@ func realParseWebhook(eventType string, payload []byte) (any, error) {
 const pushEventBody = `{"pusher":{"name":"alice"},"repository":{"full_name":"acme/widgets"}}`
 
 func TestGitHubWebhookValidSignatureDispatches(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 
@@ -42,7 +42,7 @@ func TestGitHubWebhookValidSignatureDispatches(t *testing.T) {
 }
 
 func TestGitHubWebhookInvalidSignature(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = func(r *http.Request) ([]byte, error) {
 		return nil, errors.New("bad signature")
 	}
@@ -61,7 +61,7 @@ func TestGitHubWebhookInvalidSignature(t *testing.T) {
 }
 
 func TestGitHubWebhookDuplicateDeliverySkipsDispatch(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 
@@ -87,7 +87,7 @@ func TestGitHubWebhookDuplicateDeliverySkipsDispatch(t *testing.T) {
 }
 
 func TestGitHubWebhookNoDeliveryIDSkipsDedup(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 
@@ -108,7 +108,7 @@ func TestGitHubWebhookNoDeliveryIDSkipsDedup(t *testing.T) {
 }
 
 func TestGitHubWebhookUnparseableEventType(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 
@@ -127,7 +127,7 @@ func TestGitHubWebhookUnparseableEventType(t *testing.T) {
 }
 
 func TestGitHubWebhookDispatchFailureDeletesDeliveryAndReturnsNon2xx(t *testing.T) {
-	ts := newTestServer(t, nil, "tg-secret")
+	ts := newTestServer(t, "tg-secret")
 	ts.gh.ValidateWebhookFunc = alwaysValidValidateWebhook
 	ts.gh.ParseWebhookFunc = realParseWebhook
 	ts.tg.SendMessageErr = errors.New("telegram is down")

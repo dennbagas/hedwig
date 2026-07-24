@@ -25,7 +25,7 @@ type testServer struct {
 	store database.Repository
 }
 
-func newTestServer(t *testing.T, allowedUserIDs []int64, telegramSecret string) *testServer {
+func newTestServer(t *testing.T, telegramSecret string) *testServer {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := database.Open(path)
@@ -54,7 +54,7 @@ func newTestServer(t *testing.T, allowedUserIDs []int64, telegramSecret string) 
 		t.Fatalf("notify.New() error = %v", err)
 	}
 
-	srv := New(gh, store, notifyD, retryH, tg, allowedUserIDs, telegramSecret, "/healthz", "/webhooks/telegram", zerolog.Nop())
+	srv := New(gh, store, notifyD, retryH, telegramSecret, "/healthz", "/webhooks/telegram", zerolog.Nop())
 
 	return &testServer{Server: srv, tg: tg, gh: gh, store: store}
 }

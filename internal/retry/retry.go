@@ -15,7 +15,9 @@ import (
 )
 
 const (
-	callbackFeature = "retry"
+	// CallbackFeature is the telegrambot callback feature name for the
+	// CI/CD retry button, used to identify it in the Telegram webhook router.
+	CallbackFeature = "retry"
 	callbackAction  = "trigger"
 )
 
@@ -53,7 +55,7 @@ func (h *Handler) NotifyFailure(ctx context.Context, chatID int64, workflowName,
 		return fmt.Errorf("store retry record: %w", err)
 	}
 
-	callbackData := telegrambot.EncodeCallback(callbackFeature, callbackAction, strconv.FormatInt(retryID, 10))
+	callbackData := telegrambot.EncodeCallback(CallbackFeature, callbackAction, strconv.FormatInt(retryID, 10))
 	btn := [][]telegrambot.Button{{
 		{Text: "Retry failed jobs", CallbackData: callbackData},
 	}}

@@ -88,8 +88,7 @@ func run() error {
 	}
 
 	srv := httpserver.New(
-		gh, store, notifyD, retryH, tg,
-		cfg.Telegram.AllowedUserIDs,
+		gh, store, notifyD, retryH,
 		cfg.Telegram.WebhookSecret,
 		cfg.Server.HealthzPath,
 		cfg.Telegram.WebhookPath,

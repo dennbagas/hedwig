@@ -45,6 +45,10 @@ Each step's inline keyboard is replaced/edited in place rather than sent as a ne
 
 Enforcement happens once, in a single shared check in `telegrambot/`, applied before any update is dispatched to `notify/`, `retry/`, or `prcreate/` — not duplicated per feature. Users may invoke bot commands or tap inline keyboard buttons (retry, PR-creation steps) only if on the allowlist.
 
+> Superseded by current behavior: the CI/CD retry button no longer requires
+> the allowlist (see "Reinstating the `allowedUserIDs` gate" under v2 below),
+> and message-based commands are currently ungated since none exist yet.
+
 ### Data Model (SQLite)
 
 ```sql
@@ -195,6 +199,52 @@ Defaults assumed (flag if different behavior is wanted):
 - `cmd/bot/main.go`: construct the new `deploycreate.Handler` (store, tg,
   gh, cfg.Repos, branch config, the Google Docs client, logger) and start
   its sweep goroutine, the same way `retryH` is wired today.
+
+**Consider extracting a `Dispatcher` for Telegram callbacks at this point.**
+`routeCallback`'s `switch feature { case "retry": ... }` is fine with one
+handler; once `deploycreate` becomes a second real callback handler
+(confirm/cancel buttons), the same justification that led to `notify.Dispatcher`
+(Strategy + registry, mapping event-type strings to handler implementations —
+see `internal/notify/dispatcher.go`) applies here too: pull the dispatch logic
+out of `httpserver` into e.g. `internal/interactions` with a `Handler`
+interface (`HandleCallback(ctx, cq, payload) error`) and a `Register`/
+`DispatchCallback` API, then have `retry` and `deploycreate` register
+themselves the way `notify`'s handlers do in `registerAll`. Don't build this
+speculatively before `deploycreate` exists — with only `retry` registered, the
+plain switch is simpler and the abstraction has no second implementation to
+validate its shape against.
+
+### Reinstating an `allowedUserIDs`-style gate
+
+`allowed_user_ids` was originally added to gate the v1 wizard. Since v1 was
+removed, `routeMessage` became a no-op, and the CI/CD retry button was judged
+safe to leave open to anyone in the notified chat, the config field
+(`TelegramConfig.AllowedUserIDs`), the `Server.allowedUserIDs` field, and the
+`telegrambot.IsAllowed` call sites in `handleTelegramWebhook`/`routeCallback`
+were all removed outright rather than left inert. `telegrambot.IsAllowed` and
+`telegrambot.ExtractUserID` (`internal/telegrambot/middleware.go`) were kept,
+since they're a generic allowlist utility not tied to the removed field, and
+are meant to be reused here.
+
+**When `/deploy` (or any other message-triggered command) lands, reinstate
+the gate from scratch**, since unlike the retry button, a direct message can
+come from any Telegram user who opens a DM with the bot — not just members of
+the notified chat:
+
+- Re-add `AllowedUserIDs []int64` to `TelegramConfig` in
+  `internal/config/config.go` with `validate:"required,min=1"`, and re-add an
+  "empty allowed_user_ids" case to `internal/config/load_test.go`'s
+  invalid-config table plus the `allowed_user_ids` block back into
+  `config.example.yaml` and `docs/deployments/kubernetes.md`'s ConfigMap
+  example.
+- Re-add an `allowedUserIDs []int64` field/param to `httpserver.Server` and
+  `New()` (see `internal/httpserver/server.go`), threaded through from
+  `cmd/bot/main.go`.
+- Add back an `IsAllowed` check in the `update.Message != nil` branch of
+  `handleTelegramWebhook` before calling `routeMessage`.
+- Add a `"deploy"` (and any other new feature) branch to a `feature !=
+  retry.CallbackFeature` condition in `routeCallback` so the new callback
+  stays gated — only `retry.CallbackFeature` should bypass the allowlist.
 
 ### Verification (once implemented)
 

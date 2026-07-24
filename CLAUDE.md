@@ -39,8 +39,8 @@ GitHub webhook → POST /webhooks/github
 Telegram update → POST /webhooks/telegram
     → httpserver.handleTelegramWebhook
         → secret token validation          (constant-time compare)
-        → allowedUserIDs check             (silently drops unknown users)
         → callback query → retry.Handler.HandleCallback
+        → message        → routeMessage    (currently a no-op stub)
 
 Background goroutine (30-min interval):
     → retry.RunSweep — expires CICDRetry rows older than 24h, strips buttons

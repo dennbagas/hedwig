@@ -61,8 +61,6 @@ data:
       webhook_path: /webhooks/telegram
       webhook_url: https://hedwig.example.com/webhooks/telegram
       chat_id: -100123456789
-      allowed_user_ids:
-        - 111222333
 
     database:
       path: /data/hedwig.db

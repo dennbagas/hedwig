@@ -41,7 +41,7 @@ func Load(path string) (*Config, error) {
 		// Only the first underscore separates the top-level config section
 		// (server, github, telegram, pr, database) from the field path below
 		// it; field names themselves are snake_case and must keep their
-		// remaining underscores (e.g. "webhook_secret", "allowed_user_ids").
+		// remaining underscores (e.g. "webhook_secret", "templates_dir").
 		return strings.Replace(s, "_", ".", 1)
 	}), nil); err != nil {
 		return nil, fmt.Errorf("load env vars: %w", err)
