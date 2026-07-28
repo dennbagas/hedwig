@@ -153,7 +153,10 @@ func TestHandleCallbackUnknownRetryID(t *testing.T) {
 		t.Errorf("RerunCalls = %+v, want none for an unknown retry ID", gh.RerunCalls)
 	}
 	if len(tg.Sent) != 1 || !strings.Contains(tg.Sent[0].Text, "no longer valid") {
-		t.Errorf("tg.Sent = %+v, want a single 'no longer valid' message", tg.Sent)
+		t.Fatalf("tg.Sent = %+v, want a single 'no longer valid' message", tg.Sent)
+	}
+	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want empty keyboard to remove the button", tg.Sent[0].Params.Keyboard)
 	}
 	if len(tg.AnsweredCallbacks) != 1 || tg.AnsweredCallbacks[0].CallbackQueryID != "cbq-1" {
 		t.Errorf("AnsweredCallbacks = %+v, want the callback query answered", tg.AnsweredCallbacks)
@@ -178,6 +181,9 @@ func TestHandleCallbackNonPendingStatus(t *testing.T) {
 	}
 	if !strings.Contains(tg.Sent[0].Text, "no longer valid") {
 		t.Errorf("text = %q, want 'no longer valid'", tg.Sent[0].Text)
+	}
+	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want empty keyboard to remove the button", tg.Sent[0].Params.Keyboard)
 	}
 }
 
@@ -266,6 +272,9 @@ func TestHandleCallbackSuccess(t *testing.T) {
 	wantText := testFailureText + "\n\n✅ Retry request sent"
 	if tg.Sent[0].Text != wantText {
 		t.Errorf("text = %q, want %q", tg.Sent[0].Text, wantText)
+	}
+	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want empty keyboard to remove the retry button", tg.Sent[0].Params.Keyboard)
 	}
 
 	rec, err := store.GetRetry(ctx, id)

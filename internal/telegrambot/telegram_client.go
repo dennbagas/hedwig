@@ -54,7 +54,7 @@ func (c *telegramClient) EditMessage(ctx context.Context, chatID, messageID int6
 		Text:      text,
 		ParseMode: models.ParseMode(p.ParseMode),
 	}
-	if len(p.Keyboard) > 0 {
+	if p.Keyboard != nil {
 		params.ReplyMarkup = buildKeyboard(p.Keyboard)
 	}
 	_, err := c.b.EditMessageText(ctx, params)

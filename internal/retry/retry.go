@@ -77,7 +77,8 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 		return fmt.Errorf("get retry record: %w", err)
 	}
 	if rec == nil || rec.Status != database.RetryStatusPending {
-		return h.tg.EditMessage(ctx, chatID, messageID, "This retry button is no longer valid.")
+		return h.tg.EditMessage(ctx, chatID, messageID, "This retry button is no longer valid.",
+			telegrambot.WithInlineKeyboard([][]telegrambot.Button{}))
 	}
 
 	owner, repo := splitRepo(rec.Repo)
@@ -95,7 +96,9 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID string, ch
 
 	h.logger.Info().Int64("retry_id", retryID).Int64("run_id", rec.RunID).Str("repo", rec.Repo).Msg("retry triggered")
 	text := strings.TrimRight(rec.MessageText, "\n") + "\n\n✅ Retry request sent"
-	return h.tg.EditMessage(ctx, chatID, messageID, text, telegrambot.WithParseMode("HTML"))
+	return h.tg.EditMessage(ctx, chatID, messageID, text,
+		telegrambot.WithParseMode("HTML"),
+		telegrambot.WithInlineKeyboard([][]telegrambot.Button{}))
 }
 
 func splitRepo(ownerRepo string) (owner, repo string) {
