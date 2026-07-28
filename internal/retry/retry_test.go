@@ -153,7 +153,7 @@ func TestHandleCallbackUnknownRetryID(t *testing.T) {
 		t.Errorf("RerunCalls = %+v, want none for an unknown retry ID", gh.RerunCalls)
 	}
 	if len(tg.Sent) != 1 || !strings.Contains(tg.Sent[0].Text, "no longer valid") {
-		t.Errorf("tg.Sent = %+v, want a single 'no longer valid' message", tg.Sent)
+		t.Fatalf("tg.Sent = %+v, want a single 'no longer valid' message", tg.Sent)
 	}
 	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
 		t.Errorf("keyboard = %+v, want empty keyboard to remove the button", tg.Sent[0].Params.Keyboard)
