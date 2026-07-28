@@ -115,6 +115,65 @@ func TestTelegramClientEditMessage(t *testing.T) {
 	}
 }
 
+func TestTelegramClientEditMessageOmitsReplyMarkupByDefault(t *testing.T) {
+	var gotReplyMarkup string
+	var sawReplyMarkup bool
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		gotReplyMarkup, sawReplyMarkup = r.FormValue("reply_markup"), r.Form.Has("reply_markup")
+		writeAPIResult(w, `{"message_id":7,"date":0,"chat":{"id":1,"type":"private"}}`)
+	})
+
+	if err := client.EditMessage(context.Background(), 1, 7, "updated text"); err != nil {
+		t.Fatalf("EditMessage() error = %v", err)
+	}
+	if sawReplyMarkup {
+		t.Errorf("reply_markup = %q, want no reply_markup field when no keyboard option is given", gotReplyMarkup)
+	}
+}
+
+func TestTelegramClientEditMessageWithEmptyKeyboardRemovesButton(t *testing.T) {
+	var gotReplyMarkup string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		gotReplyMarkup = r.FormValue("reply_markup")
+		writeAPIResult(w, `{"message_id":7,"date":0,"chat":{"id":1,"type":"private"}}`)
+	})
+
+	err := client.EditMessage(context.Background(), 1, 7, "updated text", WithInlineKeyboard([][]Button{}))
+	if err != nil {
+		t.Fatalf("EditMessage() error = %v", err)
+	}
+	if gotReplyMarkup != `{"inline_keyboard":[]}` {
+		t.Errorf("reply_markup = %q, want an empty inline keyboard so the button is removed", gotReplyMarkup)
+	}
+}
+
+func TestTelegramClientEditMessageWithKeyboard(t *testing.T) {
+	var gotReplyMarkup string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		gotReplyMarkup = r.FormValue("reply_markup")
+		writeAPIResult(w, `{"message_id":7,"date":0,"chat":{"id":1,"type":"private"}}`)
+	})
+
+	err := client.EditMessage(context.Background(), 1, 7, "updated text", WithInlineKeyboard([][]Button{
+		{{Text: "Retry", CallbackData: "hedwig:retry:trigger:1"}},
+	}))
+	if err != nil {
+		t.Fatalf("EditMessage() error = %v", err)
+	}
+	if !strings.Contains(gotReplyMarkup, "hedwig:retry:trigger:1") {
+		t.Errorf("reply_markup = %q, want it to contain the callback data", gotReplyMarkup)
+	}
+}
+
 func TestTelegramClientRemoveKeyboard(t *testing.T) {
 	var gotPath, gotReplyMarkup string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
