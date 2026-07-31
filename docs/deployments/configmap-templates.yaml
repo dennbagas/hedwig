@@ -17,6 +17,7 @@ data:
     {{- if eq .Action "opened" -}}
     📢 New Pull Request!
 
+    Repository: {{.Repo}}
     Title: {{.Title}}
     Author: {{.Author}}
 
@@ -25,6 +26,7 @@ data:
     {{- else if and (eq .Action "closed") .Merged -}}
     ✅ Pull Request Merged!
 
+    Repository: {{.Repo}}
     Title: {{.Title}}
     Author: {{.Author}}
     Merged by: {{.MergedBy}}
@@ -34,6 +36,7 @@ data:
     {{- else if and (eq .Action "closed") (not .Merged) -}}
     🚫 Pull Request Closed!
 
+    Repository: {{.Repo}}
     Title: {{.Title}}
     Author: {{.Author}}
 
