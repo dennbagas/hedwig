@@ -97,11 +97,12 @@ func TestHandlerSkipsOnEmptyTemplateOutput(t *testing.T) {
 func TestPullRequestHandlerOpened(t *testing.T) {
 	tg := telegrambottest.New()
 	loader := mustLoader(t, map[string]string{
-		"pull_request": `{{.Action}} {{.Title}} {{.Author}} {{.Head}} {{.Base}} {{.URL}}`,
+		"pull_request": `{{.Action}} {{.Title}} {{.Author}} {{.Head}} {{.Base}} {{.Repo}} {{.URL}}`,
 	})
 	h := &pullRequestHandler{tg: tg, chatID: 1, loader: loader}
 	event := unmarshalEvent[github.PullRequestEvent](t, `{
 		"action": "opened",
+		"repository": {"full_name": "acme/widgets"},
 		"pull_request": {
 			"title": "Add <feature>",
 			"user": {"login": "bob"},
@@ -118,7 +119,7 @@ func TestPullRequestHandlerOpened(t *testing.T) {
 		t.Fatalf("len(tg.Sent) = %d, want 1", len(tg.Sent))
 	}
 	text := tg.Sent[0].Text
-	for _, want := range []string{"opened", "bob", "bob:feature", "acme:main"} {
+	for _, want := range []string{"opened", "bob", "bob:feature", "acme:main", "acme/widgets"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text = %q, want it to contain %q", text, want)
 		}

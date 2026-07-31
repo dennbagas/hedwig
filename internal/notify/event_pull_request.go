@@ -16,6 +16,7 @@ type PullRequestContext struct {
 	MergedBy string // login of the user who merged; non-empty only when Merged is true
 	Head     string
 	Base     string
+	Repo     string
 	URL      string
 	Merged   bool
 }
@@ -40,6 +41,7 @@ func (h *pullRequestHandler) Handle(ctx context.Context, event any) error {
 		MergedBy: esc(pr.GetMergedBy().GetLogin()),
 		Head:     esc(pr.GetHead().GetLabel()),
 		Base:     esc(pr.GetBase().GetLabel()),
+		Repo:     esc(e.GetRepo().GetFullName()),
 		URL:      esc(pr.GetHTMLURL()),
 		Merged:   pr.GetMerged(),
 	})
