@@ -1,0 +1,11 @@
+{{- if eq .Action "published" -}}
+🚀 Tag Release {{.TagName}}
+
+Repository: {{.Repo}}
+Author: {{.Author}}{{if .Prerelease}} (pre-release){{end}}
+
+Description:
+{{.Body}}
+
+🔗 <{{.URL}}|View Release>
+{{- end -}}

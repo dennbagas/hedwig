@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"hedwig/internal/slackbot/slackbottest"
 	"hedwig/internal/telegrambot/telegrambottest"
 
 	"github.com/google/go-github/v88/github"
@@ -35,7 +36,7 @@ func TestPushHandler(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"push": `{{.Repo}} {{.Ref}} {{.Pusher}} {{.Commits}} commit(s) {{.Summary}}`,
 	})
-	h := &pushHandler{tg: tg, chatID: 100, loader: loader}
+	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100}, loader: loader}
 
 	event := unmarshalEvent[github.PushEvent](t, `{
 		"ref": "refs/heads/main",
@@ -65,10 +66,67 @@ func TestPushHandler(t *testing.T) {
 	}
 }
 
+func TestPushHandlerBothPlatforms(t *testing.T) {
+	tg := telegrambottest.New()
+	slack := slackbottest.New()
+	loader := mustLoader(t, map[string]string{
+		"push":       `telegram: {{.Repo}} {{.Pusher}}`,
+		"push.slack": `slack: {{.Repo}} {{.Pusher}}`,
+	})
+	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100, slack: slack, slackChanID: "C1"}, loader: loader}
+
+	event := unmarshalEvent[github.PushEvent](t, `{
+		"ref": "refs/heads/main",
+		"pusher": {"name": "alice"},
+		"repository": {"full_name": "acme/widgets"}
+	}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 1 || tg.Sent[0].Text != "telegram: acme/widgets alice" {
+		t.Fatalf("tg.Sent = %+v, want one telegram-formatted message", tg.Sent)
+	}
+	if len(slack.Sent) != 1 || slack.Sent[0].Text != "slack: acme/widgets alice" {
+		t.Fatalf("slack.Sent = %+v, want one slack-formatted message", slack.Sent)
+	}
+	if slack.Sent[0].Channel != "C1" {
+		t.Errorf("slack channel = %q, want C1", slack.Sent[0].Channel)
+	}
+}
+
+func TestPushHandlerSlackOnlyWhenTelegramTemplateSkips(t *testing.T) {
+	tg := telegrambottest.New()
+	slack := slackbottest.New()
+	loader := mustLoader(t, map[string]string{
+		// Telegram template filters out tag pushes; Slack's doesn't, so
+		// only Slack should receive a message for this event.
+		"push":       `{{if eq .RefType "branch"}}telegram push{{end}}`,
+		"push.slack": `slack push`,
+	})
+	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100, slack: slack, slackChanID: "C1"}, loader: loader}
+
+	event := unmarshalEvent[github.PushEvent](t, `{
+		"ref": "refs/tags/v1.0.0",
+		"pusher": {"name": "alice"},
+		"repository": {"full_name": "acme/widgets"}
+	}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 0 {
+		t.Errorf("tg.Sent = %+v, want none (telegram template skipped this event)", tg.Sent)
+	}
+	if len(slack.Sent) != 1 {
+		t.Fatalf("slack.Sent = %+v, want one message", slack.Sent)
+	}
+}
+
 func TestPushHandlerWrongEventType(t *testing.T) {
 	tg := telegrambottest.New()
 	loader := mustLoader(t, map[string]string{"push": `ok`})
-	h := &pushHandler{tg: tg, chatID: 100, loader: loader}
+	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100}, loader: loader}
 	if err := h.Handle(context.Background(), &github.PullRequestEvent{}); err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -83,7 +141,7 @@ func TestHandlerSkipsOnEmptyTemplateOutput(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request": `{{if eq .Action "opened"}}opened{{end}}`,
 	})
-	h := &pullRequestHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestEvent](t, `{"action":"labeled","pull_request":{"title":"x"}}`)
 
 	if err := h.Handle(context.Background(), event); err != nil {
@@ -99,7 +157,7 @@ func TestPullRequestHandlerOpened(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request": `{{.Action}} {{.Title}} {{.Author}} {{.Head}} {{.Base}} {{.Repo}} {{.URL}}`,
 	})
-	h := &pullRequestHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestEvent](t, `{
 		"action": "opened",
 		"repository": {"full_name": "acme/widgets"},
@@ -134,7 +192,7 @@ func TestPullRequestHandlerClosedMerged(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request": `{{.Action}} merged={{.Merged}}`,
 	})
-	h := &pullRequestHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestEvent](t, `{
 		"action": "closed",
 		"pull_request": {"title": "Add feature", "merged": true, "html_url": "https://github.com/acme/widgets/pull/1"}
@@ -153,7 +211,7 @@ func TestPullRequestHandlerClosedNotMerged(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request": `{{.Action}} merged={{.Merged}}`,
 	})
-	h := &pullRequestHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestEvent](t, `{
 		"action": "closed",
 		"pull_request": {"title": "Add feature", "merged": false, "html_url": "https://github.com/acme/widgets/pull/1"}
@@ -172,7 +230,7 @@ func TestCreateHandlerTag(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"create": `{{.RefType}} {{.Ref}} {{.Repo}} {{.Creator}}`,
 	})
-	h := &createHandler{tg: tg, chatID: 1, loader: loader}
+	h := &createHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.CreateEvent](t, `{
 		"ref_type": "tag",
 		"ref": "v1.0.0",
@@ -196,7 +254,7 @@ func TestCreateHandlerBranch(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"create": `{{.RefType}}`,
 	})
-	h := &createHandler{tg: tg, chatID: 1, loader: loader}
+	h := &createHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.CreateEvent](t, `{
 		"ref_type": "branch",
 		"ref": "feature/x",
@@ -217,7 +275,7 @@ func TestIssueCommentHandlerOnPR(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"issue_comment": `{{if .IsPR}}{{.PRTitle}} {{.Author}} {{.Body}}{{end}}`,
 	})
-	h := &issueCommentHandler{tg: tg, chatID: 1, loader: loader}
+	h := &issueCommentHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.IssueCommentEvent](t, `{
 		"action": "created",
 		"issue": {"title": "My PR", "pull_request": {"url": "https://api.github.com/repos/acme/widgets/pulls/1"}},
@@ -248,7 +306,7 @@ func TestIssueCommentHandlerOnPlainIssue(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"issue_comment": `{{if .IsPR}}comment{{end}}`,
 	})
-	h := &issueCommentHandler{tg: tg, chatID: 1, loader: loader}
+	h := &issueCommentHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.IssueCommentEvent](t, `{
 		"action": "created",
 		"issue": {"title": "A plain issue"},
@@ -268,7 +326,7 @@ func TestPullRequestReviewHandler(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request_review": `{{.PRTitle}} {{.Reviewer}} {{.State}}`,
 	})
-	h := &pullRequestReviewHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestReviewHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestReviewEvent](t, `{
 		"action": "submitted",
 		"review": {"user": {"login": "erin"}, "state": "approved", "html_url": "https://github.com/acme/widgets/pull/1#pullrequestreview-1"},
@@ -291,7 +349,7 @@ func TestPullRequestReviewCommentHandler(t *testing.T) {
 	loader := mustLoader(t, map[string]string{
 		"pull_request_review_comment": `{{.PRTitle}} {{.Author}} {{.File}}:{{.Line}} {{.Body}}`,
 	})
-	h := &pullRequestReviewCommentHandler{tg: tg, chatID: 1, loader: loader}
+	h := &pullRequestReviewCommentHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
 	event := unmarshalEvent[github.PullRequestReviewCommentEvent](t, `{
 		"action": "created",
 		"sender": {"login": "frank"},

@@ -25,9 +25,14 @@ func Load(path string) (*Config, error) {
 	k := koanf.New(".")
 
 	if err := k.Load(confmap.Provider(map[string]any{
-		"logging.level":    "info",
-		"server.port":      8080,
+		"logging.level":       "info",
+		"server.port":         8080,
 		"server.healthz_path": "/healthz",
+		// telegram.enabled defaults to true so existing deployments upgrading
+		// without setting this field keep notifying Telegram as before.
+		// slack.enabled has no entry here — its Go zero value (false) is the
+		// correct opt-in default.
+		"telegram.enabled": true,
 	}, "."), nil); err != nil {
 		return nil, fmt.Errorf("load defaults: %w", err)
 	}
@@ -56,11 +61,61 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
+	if err := validateChannels(&cfg); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+
 	if _, err := loadPrivateKey(cfg.GitHub.PrivateKeyPath); err != nil {
 		return nil, fmt.Errorf("parse github private key: %w", err)
 	}
 
 	return &cfg, nil
+}
+
+// validateChannels enforces per-channel required fields conditionally on
+// each channel's Enabled flag, and that at least one channel is enabled.
+// Struct-tag validation (validate.Struct) can't express "required only if
+// this sibling field is true" cleanly alongside format checks like url, so
+// this is done as a plain function instead.
+func validateChannels(cfg *Config) error {
+	if !cfg.Telegram.Enabled && !cfg.Slack.Enabled {
+		return fmt.Errorf("at least one of telegram.enabled or slack.enabled must be true")
+	}
+
+	if cfg.Telegram.Enabled {
+		if cfg.Telegram.BotToken == "" {
+			return fmt.Errorf("telegram.bot_token is required when telegram.enabled is true")
+		}
+		if cfg.Telegram.WebhookSecret == "" {
+			return fmt.Errorf("telegram.webhook_secret is required when telegram.enabled is true")
+		}
+		if cfg.Telegram.WebhookPath == "" {
+			return fmt.Errorf("telegram.webhook_path is required when telegram.enabled is true")
+		}
+		if cfg.Telegram.ChatID == 0 {
+			return fmt.Errorf("telegram.chat_id is required when telegram.enabled is true")
+		}
+		if err := validate.Var(cfg.Telegram.WebhookURL, "required,url"); err != nil {
+			return fmt.Errorf("telegram.webhook_url is required and must be a valid URL when telegram.enabled is true: %w", err)
+		}
+	}
+
+	if cfg.Slack.Enabled {
+		if cfg.Slack.BotToken == "" {
+			return fmt.Errorf("slack.bot_token is required when slack.enabled is true")
+		}
+		if cfg.Slack.SigningSecret == "" {
+			return fmt.Errorf("slack.signing_secret is required when slack.enabled is true")
+		}
+		if cfg.Slack.ChannelID == "" {
+			return fmt.Errorf("slack.channel_id is required when slack.enabled is true")
+		}
+		if cfg.Slack.WebhookPath == "" {
+			return fmt.Errorf("slack.webhook_path is required when slack.enabled is true")
+		}
+	}
+
+	return nil
 }
 
 func loadPrivateKey(path string) (*rsa.PrivateKey, error) {

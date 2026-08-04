@@ -3,8 +3,6 @@ package notify
 import (
 	"context"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -17,8 +15,7 @@ type CreateContext struct {
 }
 
 type createHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -35,19 +32,23 @@ func (h *createHandler) Handle(ctx context.Context, event any) error {
 	} else {
 		url = "https://github.com/" + repo + "/tree/" + ref
 	}
-	text, err := h.loader.render("create", CreateContext{
+	data := CreateContext{
 		RefType: e.GetRefType(),
 		Ref:     esc(ref),
 		Repo:    esc(repo),
 		Creator: esc(e.GetSender().GetLogin()),
 		URL:     esc(url),
-	})
+	}
+	telegramText, err := h.loader.render("create", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("create.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

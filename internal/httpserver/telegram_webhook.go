@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"hedwig/internal/database"
 	"hedwig/internal/logging"
 	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot"
@@ -56,7 +57,6 @@ func (s *Server) handleTelegramWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) routeCallback(ctx context.Context, logger zerolog.Logger, cq *models.CallbackQuery) error {
 	data := cq.Data
-	chatID, messageID := extractChatAndMessageID(&cq.Message)
 
 	feature, _, payload, err := telegrambot.DecodeCallback(data)
 	if err != nil {
@@ -70,7 +70,9 @@ func (s *Server) routeCallback(ctx context.Context, logger zerolog.Logger, cq *m
 		if err != nil {
 			return nil
 		}
-		return s.retryH.HandleCallback(ctx, cq.ID, chatID, messageID, retryID)
+		chatID, messageID := extractChatAndMessageID(&cq.Message)
+		return s.retryH.HandleCallback(ctx, cq.ID, database.PlatformTelegram,
+			strconv.FormatInt(chatID, 10), strconv.FormatInt(messageID, 10), retryID)
 	default:
 		logger.Warn().Str("feature", feature).Msg("unknown callback feature")
 	}

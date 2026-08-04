@@ -3,8 +3,6 @@ package notify
 import (
 	"context"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -19,8 +17,7 @@ type IssueCommentContext struct {
 }
 
 type issueCommentHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -29,7 +26,7 @@ func (h *issueCommentHandler) Handle(ctx context.Context, event any) error {
 	if !ok {
 		return nil
 	}
-	text, err := h.loader.render("issue_comment", IssueCommentContext{
+	data := IssueCommentContext{
 		Action:   e.GetAction(),
 		PRNumber: e.GetIssue().GetNumber(),
 		PRTitle:  esc(e.GetIssue().GetTitle()),
@@ -37,13 +34,17 @@ func (h *issueCommentHandler) Handle(ctx context.Context, event any) error {
 		Body:     esc(truncate(e.GetComment().GetBody(), 120)),
 		URL:      esc(e.GetComment().GetHTMLURL()),
 		IsPR:     e.GetIssue().GetPullRequestLinks() != nil,
-	})
+	}
+	telegramText, err := h.loader.render("issue_comment", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("issue_comment.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

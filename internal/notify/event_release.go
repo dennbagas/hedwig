@@ -3,8 +3,6 @@ package notify
 import (
 	"context"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -20,8 +18,7 @@ type ReleaseContext struct {
 }
 
 type releaseHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -31,7 +28,7 @@ func (h *releaseHandler) Handle(ctx context.Context, event any) error {
 		return nil
 	}
 	rel := e.GetRelease()
-	text, err := h.loader.render("release", ReleaseContext{
+	data := ReleaseContext{
 		Action:     e.GetAction(),
 		TagName:    esc(rel.GetTagName()),
 		Name:       esc(rel.GetName()),
@@ -40,13 +37,17 @@ func (h *releaseHandler) Handle(ctx context.Context, event any) error {
 		Repo:       esc(e.GetRepo().GetFullName()),
 		URL:        esc(rel.GetHTMLURL()),
 		Prerelease: rel.GetPrerelease(),
-	})
+	}
+	telegramText, err := h.loader.render("release", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("release.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

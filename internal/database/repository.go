@@ -14,4 +14,7 @@ type Repository interface {
 	GetRetry(ctx context.Context, id int64) (*CICDRetry, error)
 	UpdateRetryStatus(ctx context.Context, id int64, status RetryStatus) error
 	ExpirePendingRetries(ctx context.Context, olderThan time.Duration) ([]CICDRetry, error)
+
+	CreateRetryTarget(ctx context.Context, t RetryTarget) error
+	ListRetryTargets(ctx context.Context, retryID int64) ([]RetryTarget, error)
 }

@@ -12,14 +12,15 @@ import (
 )
 
 type Server struct {
-	github         githubapp.Client
-	store          database.Repository
-	notifyD        *notify.Dispatcher
-	retryH         *retry.Handler
-	telegramSecret string
-	healthzPath    string
-	logger         zerolog.Logger
-	mux            *http.ServeMux
+	github             githubapp.Client
+	store              database.Repository
+	notifyD            *notify.Dispatcher
+	retryH             *retry.Handler
+	telegramSecret     string
+	slackSigningSecret string
+	healthzPath        string
+	logger             zerolog.Logger
+	mux                *http.ServeMux
 }
 
 func New(
@@ -30,21 +31,28 @@ func New(
 	telegramSecret string,
 	healthzPath string,
 	telegramWebhookPath string,
+	slackEnabled bool,
+	slackSigningSecret string,
+	slackWebhookPath string,
 	logger zerolog.Logger,
 ) *Server {
 	s := &Server{
-		github:         gh,
-		store:          store,
-		notifyD:        notifyD,
-		retryH:         retryH,
-		telegramSecret: telegramSecret,
-		healthzPath:    healthzPath,
-		logger:         logger,
-		mux:            http.NewServeMux(),
+		github:             gh,
+		store:              store,
+		notifyD:            notifyD,
+		retryH:             retryH,
+		telegramSecret:     telegramSecret,
+		slackSigningSecret: slackSigningSecret,
+		healthzPath:        healthzPath,
+		logger:             logger,
+		mux:                http.NewServeMux(),
 	}
 
 	s.mux.HandleFunc("/webhooks/github", s.handleGitHubWebhook)
 	s.mux.HandleFunc(telegramWebhookPath, s.handleTelegramWebhook)
+	if slackEnabled {
+		s.mux.HandleFunc(slackWebhookPath, s.handleSlackWebhook)
+	}
 	s.mux.HandleFunc(healthzPath, s.handleHealthz)
 
 	return s

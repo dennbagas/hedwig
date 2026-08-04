@@ -3,8 +3,6 @@ package notify
 import (
 	"context"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -18,8 +16,7 @@ type PullRequestReviewContext struct {
 }
 
 type pullRequestReviewHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -28,20 +25,24 @@ func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error 
 	if !ok {
 		return nil
 	}
-	text, err := h.loader.render("pull_request_review", PullRequestReviewContext{
+	data := PullRequestReviewContext{
 		Action:   e.GetAction(),
 		PRNumber: e.GetPullRequest().GetNumber(),
 		PRTitle:  esc(e.GetPullRequest().GetTitle()),
 		Reviewer: esc(e.GetReview().GetUser().GetLogin()),
 		State:    reviewStateLabel(e.GetReview().GetState()),
 		URL:      esc(e.GetReview().GetHTMLURL()),
-	})
+	}
+	telegramText, err := h.loader.render("pull_request_review", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("pull_request_review.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

@@ -22,7 +22,7 @@ func (s *stubHandler) Handle(_ context.Context, _ any) error {
 }
 
 func TestDispatcherRoutesToRegisteredHandler(t *testing.T) {
-	d := newDispatcher(nil, 0, zerolog.Nop())
+	d := newDispatcher(zerolog.Nop())
 	h := &stubHandler{}
 	d.Register("push", h)
 
@@ -35,7 +35,7 @@ func TestDispatcherRoutesToRegisteredHandler(t *testing.T) {
 }
 
 func TestDispatcherUnknownEventTypeIsNoop(t *testing.T) {
-	d := newDispatcher(nil, 0, zerolog.Nop())
+	d := newDispatcher(zerolog.Nop())
 	h := &stubHandler{}
 	d.Register("push", h)
 
@@ -48,7 +48,7 @@ func TestDispatcherUnknownEventTypeIsNoop(t *testing.T) {
 }
 
 func TestDispatcherWrapsHandlerError(t *testing.T) {
-	d := newDispatcher(nil, 0, zerolog.Nop())
+	d := newDispatcher(zerolog.Nop())
 	d.Register("push", &stubHandler{err: errors.New("boom")})
 
 	err := d.Dispatch(context.Background(), "push", "x")
@@ -87,10 +87,10 @@ func allEventTypesLoader(t *testing.T) *templateLoader {
 // forgotten/mistyped Register call that those wouldn't.
 func TestRegisterAllWiresEveryEventType(t *testing.T) {
 	tg := telegrambottest.New()
-	d := newDispatcher(tg, 1, zerolog.Nop())
+	d := newDispatcher(zerolog.Nop())
 	// retryH is nil: every event used below takes the workflow_run
 	// "requested" branch, which never touches it.
-	registerAll(d, tg, nil, 1, allEventTypesLoader(t))
+	registerAll(d, destinations{tg: tg, chatID: 1}, nil, allEventTypesLoader(t))
 
 	tests := []struct {
 		eventType string

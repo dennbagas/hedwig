@@ -3,27 +3,35 @@ package retry
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"hedwig/internal/database"
-	"hedwig/internal/telegrambot/telegrambottest"
-
-	"github.com/rs/zerolog"
 )
 
 func TestSweepExpiresOldPendingRetries(t *testing.T) {
 	db, store := newTestRepo(t)
-	tg := telegrambottest.New()
+	h, tg, slack, _, _ := newTestHandlerWithStore(t, store)
 	ctx := context.Background()
 
-	oldID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
+	oldID, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(old) error = %v", err)
 	}
-	recentID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: oldID, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "11", MessageText: "old msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget(old) error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: oldID, Platform: database.PlatformSlack, ChatRef: testSlackChannel, MessageRef: "111.222", MessageText: "old slack msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget(old slack) error = %v", err)
+	}
+
+	recentID, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(recent) error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: recentID, Platform: database.PlatformTelegram, ChatRef: "2", MessageRef: "22", MessageText: "recent msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget(recent) error = %v", err)
 	}
 
 	backdated := time.Now().Add(-48 * time.Hour)
@@ -31,10 +39,20 @@ func TestSweepExpiresOldPendingRetries(t *testing.T) {
 		t.Fatalf("backdate old retry: %v", err)
 	}
 
-	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
+	sweep(ctx, h, 24*time.Hour)
 
-	if len(tg.RemovedKeyboards) != 1 || tg.RemovedKeyboards[0].ChatID != 1 || tg.RemovedKeyboards[0].MessageID != 11 {
-		t.Errorf("RemovedKeyboards = %+v, want exactly the old row's (chatID=1, messageID=11)", tg.RemovedKeyboards)
+	if len(tg.Sent) != 1 || tg.Sent[0].ChatID != 1 || tg.Sent[0].MessageID != 11 {
+		t.Fatalf("tg.Sent = %+v, want exactly the old telegram target's message edited (chatID=1, messageID=11)", tg.Sent)
+	}
+	if !strings.Contains(tg.Sent[0].Text, "expired") {
+		t.Errorf("telegram text = %q, want it to mention expiry", tg.Sent[0].Text)
+	}
+	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want empty keyboard to remove the button", tg.Sent[0].Params.Keyboard)
+	}
+
+	if len(slack.Sent) != 1 || slack.Sent[0].Channel != testSlackChannel || slack.Sent[0].Ts != "111.222" {
+		t.Fatalf("slack.Sent = %+v, want exactly the old slack target's message edited", slack.Sent)
 	}
 
 	oldRec, err := store.GetRetry(ctx, oldID)
@@ -54,19 +72,25 @@ func TestSweepExpiresOldPendingRetries(t *testing.T) {
 	}
 }
 
-func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
+func TestSweepContinuesAfterEditMessageError(t *testing.T) {
 	db, store := newTestRepo(t)
-	tg := telegrambottest.New()
-	tg.RemoveKeyboardErr = errors.New("telegram is down")
+	h, tg, _, _, _ := newTestHandlerWithStore(t, store)
+	tg.EditMessageErr = errors.New("telegram is down")
 	ctx := context.Background()
 
-	firstID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 11, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
+	firstID, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 1, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(first) error = %v", err)
 	}
-	secondID, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 2, MessageID: 22, RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: firstID, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "11", MessageText: "msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget(first) error = %v", err)
+	}
+	secondID, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 2, Repo: "a/b", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(second) error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: secondID, Platform: database.PlatformTelegram, ChatRef: "2", MessageRef: "22", MessageText: "msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget(second) error = %v", err)
 	}
 
 	backdated := time.Now().Add(-48 * time.Hour)
@@ -76,7 +100,7 @@ func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
 		}
 	}
 
-	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
+	sweep(ctx, h, 24*time.Hour)
 
 	for _, id := range []int64{firstID, secondID} {
 		rec, err := store.GetRetry(ctx, id)
@@ -84,23 +108,23 @@ func TestSweepContinuesAfterRemoveKeyboardError(t *testing.T) {
 			t.Fatalf("GetRetry(%d) error = %v", id, err)
 		}
 		if rec.Status != database.RetryStatusExpired {
-			t.Errorf("retry %d status = %q, want %q despite the RemoveKeyboard error", id, rec.Status, database.RetryStatusExpired)
+			t.Errorf("retry %d status = %q, want %q despite the EditMessage error", id, rec.Status, database.RetryStatusExpired)
 		}
 	}
 }
 
 func TestSweepNoExpiredRows(t *testing.T) {
 	_, store := newTestRepo(t)
-	tg := telegrambottest.New()
+	h, tg, _, _, _ := newTestHandlerWithStore(t, store)
 	ctx := context.Background()
 
-	if _, err := store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 1, RunID: 1, Repo: "a/b", Status: database.RetryStatusPending}); err != nil {
+	if _, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 1, Repo: "a/b", Status: database.RetryStatusPending}); err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
 
-	sweep(ctx, store, tg, 24*time.Hour, zerolog.Nop())
+	sweep(ctx, h, 24*time.Hour)
 
-	if len(tg.RemovedKeyboards) != 0 {
-		t.Errorf("RemovedKeyboards = %+v, want none when nothing has expired", tg.RemovedKeyboards)
+	if len(tg.Sent) != 0 {
+		t.Errorf("tg.Sent = %+v, want none when nothing has expired", tg.Sent)
 	}
 }

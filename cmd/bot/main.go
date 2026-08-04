@@ -17,6 +17,7 @@ import (
 	"hedwig/internal/logging"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
+	"hedwig/internal/slackbot"
 	"hedwig/internal/telegrambot"
 )
 
@@ -65,24 +66,37 @@ func run() error {
 		return fmt.Errorf("create github client: %w", err)
 	}
 
-	tg, err := telegrambot.New(cfg.Telegram.BotToken)
-	if err != nil {
-		return fmt.Errorf("create telegram bot: %w", err)
+	// tg and slack are nil when their channel is disabled — every downstream
+	// consumer (notify handlers, retry.Handler) treats a nil client as
+	// "skip this platform".
+	var tg telegrambot.Client
+	if cfg.Telegram.Enabled {
+		tg, err = telegrambot.New(cfg.Telegram.BotToken)
+		if err != nil {
+			return fmt.Errorf("create telegram bot: %w", err)
+		}
+	}
+
+	var slack slackbot.Client
+	if cfg.Slack.Enabled {
+		slack = slackbot.New(cfg.Slack.BotToken)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// Register the webhook URL with Telegram so it knows where to send updates.
-	if err := tg.SetWebhook(ctx, cfg.Telegram.WebhookURL, cfg.Telegram.WebhookSecret); err != nil {
-		return fmt.Errorf("set telegram webhook: %w", err)
+	if cfg.Telegram.Enabled {
+		if err := tg.SetWebhook(ctx, cfg.Telegram.WebhookURL, cfg.Telegram.WebhookSecret); err != nil {
+			return fmt.Errorf("set telegram webhook: %w", err)
+		}
 	}
 
 	// retry.Handler manages CI/CD failure notifications with inline retry buttons.
-	retryH := retry.New(store, tg, gh, logger)
+	retryH := retry.New(store, tg, slack, cfg.Slack.ChannelID, gh, logger)
 
 	// notify.Dispatcher routes each GitHub event type to its handler using templates loaded from disk.
-	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, retryH, cfg.Notifications.TemplatesDir, logger)
+	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, slack, cfg.Slack.ChannelID, retryH, cfg.Notifications.TemplatesDir, logger)
 	if err != nil {
 		return fmt.Errorf("load notification templates: %w", err)
 	}
@@ -92,11 +106,14 @@ func run() error {
 		cfg.Telegram.WebhookSecret,
 		cfg.Server.HealthzPath,
 		cfg.Telegram.WebhookPath,
+		cfg.Slack.Enabled,
+		cfg.Slack.SigningSecret,
+		cfg.Slack.WebhookPath,
 		logger,
 	)
 
 	// Background goroutine expires retry buttons older than 24 h every 30 minutes.
-	go retry.RunSweep(ctx, store, tg, 30*time.Minute, 24*time.Hour, logger)
+	go retry.RunSweep(ctx, retryH, 30*time.Minute, 24*time.Hour)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	logger.Info().Msg(fmt.Sprintf("starting http server on port: %d", cfg.Server.Port))

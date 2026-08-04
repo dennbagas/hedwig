@@ -40,8 +40,8 @@ func (r *sqliteRepository) CleanOldDeliveries(ctx context.Context, olderThan tim
 
 func (r *sqliteRepository) CreateRetry(ctx context.Context, retry CICDRetry) (int64, error) {
 	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO cicd_retries (chat_id, message_id, run_id, repo, workflow_name, message_text, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		retry.ChatID, retry.MessageID, retry.RunID, retry.Repo, retry.WorkflowName, retry.MessageText, string(retry.Status))
+		`INSERT INTO cicd_retries (run_id, repo, workflow_name, status) VALUES (?, ?, ?, ?)`,
+		retry.RunID, retry.Repo, retry.WorkflowName, string(retry.Status))
 	if err != nil {
 		return 0, fmt.Errorf("create retry: %w", err)
 	}
@@ -50,8 +50,40 @@ func (r *sqliteRepository) CreateRetry(ctx context.Context, retry CICDRetry) (in
 
 func (r *sqliteRepository) GetRetry(ctx context.Context, id int64) (*CICDRetry, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, chat_id, message_id, run_id, repo, workflow_name, message_text, status, created_at FROM cicd_retries WHERE id = ?`, id)
+		`SELECT id, run_id, repo, workflow_name, status, created_at FROM cicd_retries WHERE id = ?`, id)
 	return scanRetry(row)
+}
+
+func (r *sqliteRepository) CreateRetryTarget(ctx context.Context, t RetryTarget) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO cicd_retry_targets (retry_id, platform, chat_ref, message_ref, message_text) VALUES (?, ?, ?, ?, ?)`,
+		t.RetryID, t.Platform, t.ChatRef, t.MessageRef, t.MessageText)
+	if err != nil {
+		return fmt.Errorf("create retry target: %w", err)
+	}
+	return nil
+}
+
+func (r *sqliteRepository) ListRetryTargets(ctx context.Context, retryID int64) ([]RetryTarget, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT retry_id, platform, chat_ref, message_ref, message_text FROM cicd_retry_targets WHERE retry_id = ?`, retryID)
+	if err != nil {
+		return nil, fmt.Errorf("list retry targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []RetryTarget
+	for rows.Next() {
+		var t RetryTarget
+		if err := rows.Scan(&t.RetryID, &t.Platform, &t.ChatRef, &t.MessageRef, &t.MessageText); err != nil {
+			return nil, fmt.Errorf("scan retry target: %w", err)
+		}
+		targets = append(targets, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return targets, nil
 }
 
 func (r *sqliteRepository) UpdateRetryStatus(ctx context.Context, id int64, status RetryStatus) error {
@@ -69,7 +101,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	defer tx.Rollback() //nolint:errcheck
 
 	rows, err := tx.QueryContext(ctx,
-		`SELECT id, chat_id, message_id, run_id, repo, workflow_name, message_text, status, created_at
+		`SELECT id, run_id, repo, workflow_name, status, created_at
 		 FROM cicd_retries WHERE status = 'pending' AND created_at < ?`, cutoff)
 	if err != nil {
 		return nil, err
@@ -80,7 +112,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 	for rows.Next() {
 		var retry CICDRetry
 		var status string
-		if err := rows.Scan(&retry.ID, &retry.ChatID, &retry.MessageID, &retry.RunID, &retry.Repo, &retry.WorkflowName, &retry.MessageText, &status, &retry.CreatedAt); err != nil {
+		if err := rows.Scan(&retry.ID, &retry.RunID, &retry.Repo, &retry.WorkflowName, &status, &retry.CreatedAt); err != nil {
 			return nil, err
 		}
 		retry.Status = RetryStatus(status)
@@ -112,7 +144,7 @@ func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan t
 func scanRetry(row *sql.Row) (*CICDRetry, error) {
 	var r CICDRetry
 	var status string
-	err := row.Scan(&r.ID, &r.ChatID, &r.MessageID, &r.RunID, &r.Repo, &r.WorkflowName, &r.MessageText, &status, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.RunID, &r.Repo, &r.WorkflowName, &status, &r.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

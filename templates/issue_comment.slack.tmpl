@@ -1,0 +1,10 @@
+{{- if and .IsPR (eq .Action "created") -}}
+💬 New comment on PR #{{.PRNumber}}
+
+Title: {{.PRTitle}}
+Author: {{.Author}}
+Comment: {{.Body}}
+
+Comment URL:
+{{.URL}}
+{{- end -}}
