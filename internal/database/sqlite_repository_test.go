@@ -149,6 +149,51 @@ func TestGetRetryNotFound(t *testing.T) {
 	}
 }
 
+func TestClaimPendingRetryOnlyWinsOnce(t *testing.T) {
+	_, repo := newTestRepo(t)
+	ctx := context.Background()
+
+	id, err := repo.CreateRetry(ctx, CICDRetry{RunID: 1, Repo: "a/b", Status: RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+
+	claimed, err := repo.ClaimPendingRetry(ctx, id, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("first ClaimPendingRetry() error = %v", err)
+	}
+	if !claimed {
+		t.Fatal("first ClaimPendingRetry() = false, want true (nothing else has claimed it yet)")
+	}
+
+	claimed, err = repo.ClaimPendingRetry(ctx, id, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("second ClaimPendingRetry() error = %v", err)
+	}
+	if claimed {
+		t.Error("second ClaimPendingRetry() = true, want false — simulates two near-simultaneous taps racing for the same retry")
+	}
+
+	rec, err := repo.GetRetry(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRetry() error = %v", err)
+	}
+	if rec.Status != RetryStatusRetried {
+		t.Errorf("status = %q, want %q", rec.Status, RetryStatusRetried)
+	}
+}
+
+func TestClaimPendingRetryNonexistentID(t *testing.T) {
+	_, repo := newTestRepo(t)
+	claimed, err := repo.ClaimPendingRetry(context.Background(), 999999, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("ClaimPendingRetry() error = %v", err)
+	}
+	if claimed {
+		t.Error("ClaimPendingRetry() = true, want false for a nonexistent id")
+	}
+}
+
 func TestUpdateRetryStatus(t *testing.T) {
 	_, repo := newTestRepo(t)
 	ctx := context.Background()

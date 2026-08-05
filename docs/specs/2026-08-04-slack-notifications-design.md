@@ -1,6 +1,6 @@
 # Design: Slack as a Second Notification Destination
 
-**Status:** approved, not yet implemented.
+**Status:** implemented (see PR #5).
 
 ## Goal
 

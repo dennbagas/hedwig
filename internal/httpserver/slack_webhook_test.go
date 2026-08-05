@@ -17,6 +17,16 @@ import (
 	"hedwig/internal/database"
 )
 
+// withSyncSlackCallback makes handleSlackWebhook's background HandleCallback
+// dispatch run synchronously for the duration of the test, so assertions can
+// happen deterministically right after ServeHTTP returns.
+func withSyncSlackCallback(t *testing.T) {
+	t.Helper()
+	prev := runAsync
+	runAsync = func(fn func()) { fn() }
+	t.Cleanup(func() { runAsync = prev })
+}
+
 // signSlackRequest returns the timestamp/signature header values Slack
 // would attach to a request with this body, using testSlackSigningSecret —
 // mirroring the exact v0 scheme verifySlackSignature checks.
@@ -47,6 +57,7 @@ func newSlackRequest(t *testing.T, body string, timestamp string, validSignature
 }
 
 func TestSlackWebhookRetryCallbackRoutesToRetryHandler(t *testing.T) {
+	withSyncSlackCallback(t)
 	ts := newTestServer(t, "secret")
 	ctx := context.Background()
 

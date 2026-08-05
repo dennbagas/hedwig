@@ -155,14 +155,34 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		return nil
 	}
 
+	// Atomically claim the retry before calling GitHub: the same retry can
+	// have a live button on both Telegram and Slack simultaneously, so two
+	// near-simultaneous taps could otherwise both observe "pending" and
+	// trigger RerunFailedJobs twice. Only the caller that wins the claim
+	// proceeds; a lost race is treated the same as "already handled."
+	claimed, err := h.store.ClaimPendingRetry(ctx, retryID, database.RetryStatusRetried)
+	if err != nil {
+		return fmt.Errorf("claim pending retry: %w", err)
+	}
+	if !claimed {
+		h.fanOut(ctx, targets, func(database.RetryTarget) string {
+			return "This retry button is no longer valid."
+		}, true)
+		return nil
+	}
+
 	owner, repo := splitRepo(rec.Repo)
 
 	if err := h.github.RerunFailedJobs(ctx, owner, repo, rec.RunID); err != nil {
 		h.logger.Error().Err(err).Int64("run_id", rec.RunID).Msg("rerun failed jobs API error")
+		// Release the claim so the button stays usable for a retry.
+		if resetErr := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusPending); resetErr != nil {
+			h.logger.Warn().Err(resetErr).Int64("retry_id", retryID).Msg("failed to reset retry status to pending after rerun error")
+		}
 		checkURL := fmt.Sprintf("https://github.com/%s/actions/runs/%d", rec.Repo, rec.RunID)
 		h.fanOut(ctx, targets, func(t database.RetryTarget) string {
 			if t.Platform == database.PlatformSlack {
-				return fmt.Sprintf("Failed to retry: %s\n<%s|Check on GitHub>", err.Error(), checkURL)
+				return fmt.Sprintf("Failed to retry: %s\n<%s|Check on GitHub>", escapeSlackMrkdwn(err.Error()), checkURL)
 			}
 			return fmt.Sprintf("Failed to retry: %s\n<a href=\"%s\">Check on GitHub</a>",
 				html.EscapeString(err.Error()), html.EscapeString(checkURL))
@@ -170,15 +190,22 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		return nil
 	}
 
-	if err := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusRetried); err != nil {
-		h.logger.Warn().Err(err).Msg("failed to update retry status to retried")
-	}
-
 	h.logger.Info().Int64("retry_id", retryID).Int64("run_id", rec.RunID).Str("repo", rec.Repo).Msg("retry triggered")
 	h.fanOut(ctx, targets, func(t database.RetryTarget) string {
 		return strings.TrimRight(t.MessageText, "\n") + "\n\n✅ Retry request sent"
 	}, true)
 	return nil
+}
+
+// escapeSlackMrkdwn escapes the three characters Slack's mrkdwn treats as
+// markup, so untrusted/dynamic text (e.g. a GitHub API error message) can't
+// corrupt the message or the trailing <url|label> link. Order matters: '&'
+// must be escaped first so the entities added for '<'/'>' aren't themselves
+// re-escaped.
+func escapeSlackMrkdwn(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	return strings.ReplaceAll(s, ">", "&gt;")
 }
 
 // fanOut edits every target's message to buildText(target), stripping its

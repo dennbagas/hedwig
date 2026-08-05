@@ -62,7 +62,7 @@ func newTestServer(t *testing.T, telegramSecret string) *testServer {
 		t.Fatalf("notify.New() error = %v", err)
 	}
 
-	srv := New(gh, store, notifyD, retryH, telegramSecret, "/healthz", "/webhooks/telegram",
+	srv := New(gh, store, notifyD, retryH, telegramSecret, "/healthz", true, "/webhooks/telegram",
 		true, testSlackSigningSecret, "/webhooks/slack/interactions", zerolog.Nop())
 
 	return &testServer{Server: srv, tg: tg, slack: slack, gh: gh, store: store}

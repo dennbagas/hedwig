@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,17 @@ import (
 	"hedwig/internal/retry"
 	"hedwig/internal/telegrambot"
 )
+
+// slackCallbackTimeout bounds the background HandleCallback call triggered
+// by a Slack interaction — it runs after the HTTP response is already sent,
+// with a context detached from the request (r.Context() is cancelled the
+// moment the handler returns).
+const slackCallbackTimeout = 30 * time.Second
+
+// runAsync executes fn in a new goroutine. Tests override this to run fn
+// synchronously so assertions can happen deterministically right after
+// ServeHTTP returns, without sleeping/polling for a background goroutine.
+var runAsync = func(fn func()) { go fn() }
 
 // slackSignatureMaxAge rejects Slack interaction requests whose timestamp is
 // further from "now" than this, guarding against replay attacks — mirrors
@@ -87,12 +99,21 @@ func (s *Server) handleSlackWebhook(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// callbackQueryID is empty: Slack has no separate "answer this
-		// callback" API call the way Telegram does — the interaction is
-		// acknowledged simply by returning 200 here.
-		if err := s.retryH.HandleCallback(ctx, "", database.PlatformSlack, payload.Channel.ID, payload.Message.Ts, retryID); err != nil {
-			logger.Error().Err(err).Msg("handle slack callback")
-		}
+		// Acknowledge immediately: Slack expects a 200 within 3 seconds of
+		// an interaction, but HandleCallback can make a synchronous GitHub
+		// API call that may take longer. callbackQueryID is empty — Slack
+		// has no separate "answer this callback" API call the way Telegram
+		// does, so this response *is* the acknowledgment.
+		w.WriteHeader(http.StatusOK)
+		channelID, ts := payload.Channel.ID, payload.Message.Ts
+		runAsync(func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), slackCallbackTimeout)
+			defer cancel()
+			if err := s.retryH.HandleCallback(bgCtx, "", database.PlatformSlack, channelID, ts, retryID); err != nil {
+				logger.Error().Err(err).Msg("handle slack callback")
+			}
+		})
+		return
 	default:
 		logger.Warn().Str("feature", feature).Msg("unknown slack callback feature")
 	}

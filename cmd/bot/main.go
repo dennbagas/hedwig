@@ -105,6 +105,7 @@ func run() error {
 		gh, store, notifyD, retryH,
 		cfg.Telegram.WebhookSecret,
 		cfg.Server.HealthzPath,
+		cfg.Telegram.Enabled,
 		cfg.Telegram.WebhookPath,
 		cfg.Slack.Enabled,
 		cfg.Slack.SigningSecret,

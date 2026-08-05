@@ -30,6 +30,7 @@ func New(
 	retryH *retry.Handler,
 	telegramSecret string,
 	healthzPath string,
+	telegramEnabled bool,
 	telegramWebhookPath string,
 	slackEnabled bool,
 	slackSigningSecret string,
@@ -49,7 +50,9 @@ func New(
 	}
 
 	s.mux.HandleFunc("/webhooks/github", s.handleGitHubWebhook)
-	s.mux.HandleFunc(telegramWebhookPath, s.handleTelegramWebhook)
+	if telegramEnabled {
+		s.mux.HandleFunc(telegramWebhookPath, s.handleTelegramWebhook)
+	}
 	if slackEnabled {
 		s.mux.HandleFunc(slackWebhookPath, s.handleSlackWebhook)
 	}

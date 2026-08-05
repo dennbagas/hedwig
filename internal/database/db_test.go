@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -48,13 +49,14 @@ func TestOpenCreatesExpectedTables(t *testing.T) {
 
 func TestMigrationDownAndUpPreservesTelegramTargets(t *testing.T) {
 	db := newTestDB(t)
+	ctx := context.Background()
 
-	if _, err := db.Exec(
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO cicd_retries (id, run_id, repo, status, workflow_name) VALUES (1, 55, 'acme/widgets', 'pending', 'Build')`,
 	); err != nil {
 		t.Fatalf("seed cicd_retries: %v", err)
 	}
-	if _, err := db.Exec(
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO cicd_retry_targets (retry_id, platform, chat_ref, message_ref, message_text) VALUES (1, 'telegram', '111', '222', 'msg')`,
 	); err != nil {
 		t.Fatalf("seed cicd_retry_targets: %v", err)
@@ -82,7 +84,7 @@ func TestMigrationDownAndUpPreservesTelegramTargets(t *testing.T) {
 
 	var chatID, messageID int64
 	var messageText string
-	if err := db.QueryRow(`SELECT chat_id, message_id, message_text FROM cicd_retries WHERE id = 1`).Scan(&chatID, &messageID, &messageText); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT chat_id, message_id, message_text FROM cicd_retries WHERE id = 1`).Scan(&chatID, &messageID, &messageText); err != nil {
 		t.Fatalf("query downgraded cicd_retries: %v", err)
 	}
 	if chatID != 111 || messageID != 222 || messageText != "msg" {
@@ -96,7 +98,7 @@ func TestMigrationDownAndUpPreservesTelegramTargets(t *testing.T) {
 		t.Error("cicd_retry_targets should exist again after migrating back up")
 	}
 	var chatRef, messageRef, retryMessageText string
-	if err := db.QueryRow(`SELECT chat_ref, message_ref, message_text FROM cicd_retry_targets WHERE retry_id = 1 AND platform = 'telegram'`).Scan(&chatRef, &messageRef, &retryMessageText); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT chat_ref, message_ref, message_text FROM cicd_retry_targets WHERE retry_id = 1 AND platform = 'telegram'`).Scan(&chatRef, &messageRef, &retryMessageText); err != nil {
 		t.Fatalf("query re-upgraded cicd_retry_targets: %v", err)
 	}
 	if chatRef != "111" || messageRef != "222" || retryMessageText != "msg" {

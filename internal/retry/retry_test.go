@@ -329,6 +329,69 @@ func TestHandleCallbackRerunErrorEscapesHTML(t *testing.T) {
 	}
 }
 
+func TestHandleCallbackRerunErrorEscapesSlackMrkdwn(t *testing.T) {
+	h, _, slack, gh, store := newTestHandler(t)
+	ctx := context.Background()
+
+	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 1, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformSlack, ChatRef: testSlackChannel, MessageRef: "1.1", MessageText: testSlackText}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
+	}
+	gh.RerunFailedJobsErr = errors.New("run <failed> & stopped")
+
+	if err := h.HandleCallback(ctx, "", database.PlatformSlack, testSlackChannel, "1.1", id); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	text := slack.Sent[0].Text
+	if strings.Contains(text, "<failed>") || strings.Contains(text, " & ") {
+		t.Errorf("text = %q, contains unescaped mrkdwn special characters", text)
+	}
+	if !strings.Contains(text, "&lt;failed&gt;") || !strings.Contains(text, "&amp;") {
+		t.Errorf("text = %q, want the error message escaped for Slack mrkdwn", text)
+	}
+	// The link built from checkURL must survive intact (not itself mangled by escaping).
+	if !strings.Contains(text, "<https://github.com/acme/widgets/actions/runs/1|Check on GitHub>") {
+		t.Errorf("text = %q, want the GitHub link unescaped", text)
+	}
+}
+
+func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
+	// Simulates two near-simultaneous taps (one per platform) on the same
+	// retry: the first call's ClaimPendingRetry should win, the second
+	// should see the retry as already claimed and not call GitHub again.
+	h, tg, _, gh, store := newTestHandler(t)
+	ctx := context.Background()
+
+	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: testTelegramText}); err != nil {
+		t.Fatalf("CreateRetryTarget(telegram) error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformSlack, ChatRef: testSlackChannel, MessageRef: "999.111", MessageText: testSlackText}); err != nil {
+		t.Fatalf("CreateRetryTarget(slack) error = %v", err)
+	}
+
+	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
+		t.Fatalf("first HandleCallback() error = %v", err)
+	}
+	if err := h.HandleCallback(ctx, "", database.PlatformSlack, testSlackChannel, "999.111", id); err != nil {
+		t.Fatalf("second HandleCallback() error = %v", err)
+	}
+
+	if len(gh.RerunCalls) != 1 {
+		t.Fatalf("RerunCalls = %+v, want exactly one — the second tap must not trigger a second rerun", gh.RerunCalls)
+	}
+	if !strings.Contains(tg.Sent[len(tg.Sent)-1].Text, "no longer valid") {
+		t.Errorf("last telegram message should not be the second tap's own success text, want 'no longer valid'; got %q", tg.Sent[len(tg.Sent)-1].Text)
+	}
+}
+
 func TestHandleCallbackSuccess(t *testing.T) {
 	h, tg, slack, gh, store := newTestHandler(t)
 	ctx := context.Background()

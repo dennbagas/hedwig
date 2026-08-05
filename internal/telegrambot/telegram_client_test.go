@@ -115,6 +115,23 @@ func TestTelegramClientEditMessage(t *testing.T) {
 	}
 }
 
+// TestInt64ToInt covers ordinary pass-through values. The out-of-range
+// branch (v > math.MaxInt or v < math.MinInt) is unreachable on 64-bit
+// platforms — where int and int64 have identical range, so every int64 value
+// round-trips — and only guards a 32-bit build, which can't be exercised
+// here without overflowing int64 itself to construct a counterexample.
+func TestInt64ToInt(t *testing.T) {
+	if got, err := int64ToInt(42); err != nil || got != 42 {
+		t.Errorf("int64ToInt(42) = (%d, %v), want (42, nil)", got, err)
+	}
+	if got, err := int64ToInt(0); err != nil || got != 0 {
+		t.Errorf("int64ToInt(0) = (%d, %v), want (0, nil)", got, err)
+	}
+	if got, err := int64ToInt(-1); err != nil || got != -1 {
+		t.Errorf("int64ToInt(-1) = (%d, %v), want (-1, nil)", got, err)
+	}
+}
+
 func TestTelegramClientRemoveKeyboard(t *testing.T) {
 	var gotPath, gotReplyMarkup string
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

@@ -70,7 +70,7 @@ func (r *sqliteRepository) ListRetryTargets(ctx context.Context, retryID int64) 
 	if err != nil {
 		return nil, fmt.Errorf("list retry targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var targets []RetryTarget
 	for rows.Next() {
@@ -90,6 +90,19 @@ func (r *sqliteRepository) UpdateRetryStatus(ctx context.Context, id int64, stat
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE cicd_retries SET status = ? WHERE id = ?`, string(status), id)
 	return err
+}
+
+func (r *sqliteRepository) ClaimPendingRetry(ctx context.Context, id int64, to RetryStatus) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE cicd_retries SET status = ? WHERE id = ? AND status = 'pending'`, string(to), id)
+	if err != nil {
+		return false, fmt.Errorf("claim pending retry: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim pending retry: %w", err)
+	}
+	return n == 1, nil
 }
 
 func (r *sqliteRepository) ExpirePendingRetries(ctx context.Context, olderThan time.Duration) ([]CICDRetry, error) {
