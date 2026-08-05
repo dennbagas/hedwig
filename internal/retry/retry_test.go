@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"hedwig/internal/telegrambot"
 	"hedwig/internal/telegrambot/telegrambottest"
 
+	"github.com/google/go-github/v88/github"
 	"github.com/rs/zerolog"
 )
 
@@ -301,8 +303,46 @@ func TestHandleCallbackRerunError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRetry() error = %v", err)
 	}
+	// A plain generic error is ambiguous (could be network timeout, etc.) —
+	// status should remain "retried" to prevent double-trigger race, not reset to pending.
+	if rec.Status != database.RetryStatusRetried {
+		t.Errorf("status = %q, want to remain retried after an ambiguous error (prevents double-trigger)", rec.Status)
+	}
+}
+
+func TestHandleCallbackRerunConfirmedRejection(t *testing.T) {
+	h, _, _, gh, store := newTestHandler(t)
+	ctx := context.Background()
+
+	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: testTelegramText}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
+	}
+	// A structured GitHub ErrorResponse with a 4xx client error (e.g. 404 Not Found)
+	// is a confirmed rejection — the rerun definitely did not happen.
+	gh.RerunFailedJobsErr = &github.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusNotFound},
+		Message:  "Not Found",
+	}
+
+	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	if len(gh.RerunCalls) != 1 {
+		t.Fatalf("RerunCalls = %+v, want exactly one call", gh.RerunCalls)
+	}
+
+	rec, err := store.GetRetry(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRetry() error = %v", err)
+	}
+	// A confirmed rejection should reset status to pending so the button can be retried.
 	if rec.Status != database.RetryStatusPending {
-		t.Errorf("status = %q, want to remain pending after a failed retry attempt", rec.Status)
+		t.Errorf("status = %q, want pending after confirmed rejection (button can be retried)", rec.Status)
 	}
 }
 

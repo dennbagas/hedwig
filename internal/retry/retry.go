@@ -2,8 +2,10 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"hedwig/internal/slackbot"
 	"hedwig/internal/telegrambot"
 
+	"github.com/google/go-github/v88/github"
 	"github.com/rs/zerolog"
 )
 
@@ -175,9 +178,15 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 
 	if err := h.github.RerunFailedJobs(ctx, owner, repo, rec.RunID); err != nil {
 		h.logger.Error().Err(err).Int64("run_id", rec.RunID).Msg("rerun failed jobs API error")
-		// Release the claim so the button stays usable for a retry.
-		if resetErr := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusPending); resetErr != nil {
-			h.logger.Warn().Err(resetErr).Int64("retry_id", retryID).Msg("failed to reset retry status to pending after rerun error")
+		// Only reset status to pending for confirmed rejections from GitHub
+		// (e.g. 404 Not Found, 422 Unprocessable Entity). For ambiguous errors
+		// (network timeouts, 5xx, non-ErrorResponse errors) leave status as
+		// "retried" to prevent double-trigger races — we can't be sure whether
+		// GitHub actually accepted the rerun despite the error.
+		if isConfirmedRejection(err) {
+			if resetErr := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusPending); resetErr != nil {
+				h.logger.Warn().Err(resetErr).Int64("retry_id", retryID).Msg("failed to reset retry status to pending after confirmed rejection")
+			}
 		}
 		checkURL := fmt.Sprintf("https://github.com/%s/actions/runs/%d", rec.Repo, rec.RunID)
 		h.fanOut(ctx, targets, func(t database.RetryTarget) string {
@@ -195,6 +204,24 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		return strings.TrimRight(t.MessageText, "\n") + "\n\n✅ Retry request sent"
 	}, true)
 	return nil
+}
+
+// isConfirmedRejection returns true when err is a structured GitHub API
+// error response with a status code indicating the request was definitively
+// rejected (404 Not Found, 422 Unprocessable Entity, etc.). Returns false for
+// ambiguous errors where we can't be certain the request didn't succeed
+// (network errors, 5xx server errors, non-ErrorResponse errors).
+func isConfirmedRejection(err error) bool {
+	var ghErr *github.ErrorResponse
+	if !errors.As(err, &ghErr) {
+		// Not a structured GitHub API error — could be network timeout,
+		// DNS failure, etc. Treat as ambiguous.
+		return false
+	}
+	// 4xx client errors (except 429 rate limit which might succeed on
+	// retry) are definitive rejections; 5xx server errors are ambiguous.
+	code := ghErr.Response.StatusCode
+	return code >= http.StatusBadRequest && code < http.StatusInternalServerError && code != http.StatusTooManyRequests
 }
 
 // escapeSlackMrkdwn escapes the three characters Slack's mrkdwn treats as
