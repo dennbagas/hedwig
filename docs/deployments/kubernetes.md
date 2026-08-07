@@ -7,11 +7,14 @@ This guide covers deploying Hedwig on Kubernetes using the container image from 
 - Kubernetes cluster with `kubectl` access
 - A namespace to deploy into (examples use `hedwig`)
 - The GitHub App private key (`.pem` file)
-- Bot token and webhook secrets from Telegram and GitHub
+- Bot token and webhook secrets from Telegram and/or Slack, and from GitHub
+- At least one of Telegram or Slack must be enabled — see [Slack app setup](#slack-app-setup) if you're enabling Slack
 
 ## Secrets
 
-Hedwig requires four secrets. Create them as a single Kubernetes Secret:
+Create the secrets Hedwig needs as a single Kubernetes Secret. Include only the
+Telegram and/or Slack keys for the channel(s) you're enabling — `github-webhook-secret`
+and `github-app.pem` are always required:
 
 ```bash
 kubectl create namespace hedwig
@@ -20,16 +23,20 @@ kubectl create secret generic hedwig-secrets \
   --namespace hedwig \
   --from-literal=telegram-bot-token='<your-telegram-bot-token>' \
   --from-literal=telegram-webhook-secret='<your-telegram-webhook-secret>' \
+  --from-literal=slack-bot-token='<your-slack-bot-token>' \
+  --from-literal=slack-signing-secret='<your-slack-signing-secret>' \
   --from-literal=github-webhook-secret='<your-github-webhook-secret>' \
   --from-file=github-app.pem=./secrets/github-app.pem
 ```
 
-| Key | Description |
-|---|---|
-| `telegram-bot-token` | Bot token from @BotFather |
-| `telegram-webhook-secret` | Random secret you set when registering the Telegram webhook URL |
-| `github-webhook-secret` | HMAC secret configured in your GitHub App webhook settings |
-| `github-app.pem` | GitHub App private key file |
+| Key | Description | Required when |
+|---|---|---|
+| `telegram-bot-token` | Bot token from @BotFather | `telegram.enabled: true` |
+| `telegram-webhook-secret` | Random secret you set when registering the Telegram webhook URL | `telegram.enabled: true` |
+| `slack-bot-token` | Bot User OAuth Token (`xoxb-...`) from your Slack app's **OAuth & Permissions** page | `slack.enabled: true` |
+| `slack-signing-secret` | Signing Secret from your Slack app's **Basic Information** page | `slack.enabled: true` |
+| `github-webhook-secret` | HMAC secret configured in your GitHub App webhook settings | always |
+| `github-app.pem` | GitHub App private key file | always |
 
 ## ConfigMap
 
@@ -56,11 +63,22 @@ data:
       webhook_secret: ""   # set via APP_GITHUB_WEBHOOK_SECRET
 
     telegram:
+      enabled: true
       bot_token: ""        # set via APP_TELEGRAM_BOT_TOKEN
       webhook_secret: ""   # set via APP_TELEGRAM_WEBHOOK_SECRET
       webhook_path: /webhooks/telegram
       webhook_url: https://hedwig.example.com/webhooks/telegram
       chat_id: -100123456789
+
+    # Slack is optional — omit or set slack.enabled: false to notify
+    # Telegram only. At least one of telegram.enabled / slack.enabled
+    # must be true.
+    slack:
+      enabled: true
+      bot_token: ""          # set via APP_SLACK_BOT_TOKEN
+      signing_secret: ""     # set via APP_SLACK_SIGNING_SECRET
+      channel_id: "C0123456789"
+      webhook_path: /webhooks/slack/interactions
 
     database:
       path: /data/hedwig.db
@@ -86,6 +104,11 @@ data:
     Author: {{.Pusher}}
     Message: {{.Summary}}
     Repository: {{.Repo}}
+  push.slack.tmpl: |
+    ✅ Push to `{{.Ref}}`
+    Author: {{.Pusher}}
+    Message: {{.Summary}}
+    Repository: {{.Repo}}
   pull_request.tmpl: |
     {{- if eq .Action "opened" -}}
     📢 New Pull Request!
@@ -96,10 +119,14 @@ data:
     Pull Request URL:
     {{.URL}}
     {{- end -}}
-  # add remaining event templates here — see templates/ in the repo for defaults
+  # add remaining event templates here — see templates/ in the repo for defaults.
+  # Every event type needs two files if Slack is enabled: <event>.tmpl
+  # (Telegram, HTML) and <event>.slack.tmpl (Slack, mrkdwn) — Hedwig renders
+  # each independently and skips whichever platform's template is missing
+  # or produces empty output.
 ```
 
-Copy the defaults from the repo's [`templates/`](../templates/) directory as a starting point:
+Copy the defaults from the repo's [`templates/`](../templates/) directory as a starting point — this picks up every `*.tmpl` file, including the `*.slack.tmpl` ones, in one command:
 
 ```bash
 kubectl create configmap hedwig-templates \
@@ -165,6 +192,21 @@ spec:
                 secretKeyRef:
                   name: hedwig-secrets
                   key: telegram-webhook-secret
+            # optional: true lets the pod start even if you didn't create
+            # these keys (e.g. Slack disabled) — omit these two env vars
+            # entirely if you're never going to enable Slack.
+            - name: APP_SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hedwig-secrets
+                  key: slack-bot-token
+                  optional: true
+            - name: APP_SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hedwig-secrets
+                  key: slack-signing-secret
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /etc/hedwig/config.yaml
@@ -242,7 +284,19 @@ spec:
                   number: 80
 ```
 
-Replace `hedwig.example.com` with your actual domain. The domain must be reachable by both GitHub (for webhook delivery) and Telegram (for webhook registration).
+Replace `hedwig.example.com` with your actual domain. The domain must be reachable by GitHub (for webhook delivery), Telegram (for webhook registration), and — if Slack is enabled — Slack (for the Interactivity Request URL, `/webhooks/slack/interactions`).
+
+## Slack app setup
+
+Slack notifications and the interactive retry button require a Slack app configured before you fill in `slack.*` config/secrets. This is a one-time, operational (not code) setup:
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) (from scratch or a manifest) in the target workspace.
+2. Under **OAuth & Permissions**, add the `chat:write` Bot Token Scope (add `chat:write.public` too if you don't want to invite the bot to the channel first). Install the app to the workspace and copy the **Bot User OAuth Token** (`xoxb-...`) — this is `slack-bot-token` / `APP_SLACK_BOT_TOKEN`.
+3. Under **Basic Information**, copy the **Signing Secret** — this is `slack-signing-secret` / `APP_SLACK_SIGNING_SECRET`. Hedwig uses it to verify that interaction requests actually came from Slack (HMAC signature check on `/webhooks/slack/interactions`).
+4. Under **Interactivity & Shortcuts**, turn Interactivity on and set the **Request URL** to `https://hedwig.example.com/webhooks/slack/interactions` (your Ingress host + the `slack.webhook_path` from config). Slack sends the CI/CD retry button's tap events here.
+5. Invite the bot to the channel you want notifications in (`/invite @your-bot-name`), then get that channel's ID (right-click the channel → **View channel details**, ID is at the bottom) — this is `slack.channel_id` in config.
+
+Once these are in place, set `slack.enabled: true` in the `hedwig-config` ConfigMap and add the two secret keys to `hedwig-secrets` as shown above, then roll the deployment (`kubectl rollout restart deployment/hedwig -n hedwig`) to pick up the change.
 
 ## Updating notification templates
 
