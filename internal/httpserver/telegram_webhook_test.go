@@ -45,9 +45,12 @@ func TestTelegramWebhookRetryCallbackRoutesToRetryHandler(t *testing.T) {
 	ts := newTestServer(t, "secret")
 	ctx := context.Background()
 
-	id, err := ts.store.CreateRetry(ctx, database.CICDRetry{ChatID: 1, MessageID: 2, RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	id, err := ts.store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := ts.store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: "msg"}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
 	}
 
 	cb := telegrambot.EncodeCallback("retry", "trigger", strconv.FormatInt(id, 10))

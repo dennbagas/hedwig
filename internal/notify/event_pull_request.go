@@ -3,8 +3,6 @@ package notify
 import (
 	"context"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -22,8 +20,7 @@ type PullRequestContext struct {
 }
 
 type pullRequestHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -33,7 +30,7 @@ func (h *pullRequestHandler) Handle(ctx context.Context, event any) error {
 		return nil
 	}
 	pr := e.GetPullRequest()
-	text, err := h.loader.render("pull_request", PullRequestContext{
+	data := PullRequestContext{
 		Action:   e.GetAction(),
 		Number:   pr.GetNumber(),
 		Title:    esc(pr.GetTitle()),
@@ -44,13 +41,17 @@ func (h *pullRequestHandler) Handle(ctx context.Context, event any) error {
 		Repo:     esc(e.GetRepo().GetFullName()),
 		URL:      esc(pr.GetHTMLURL()),
 		Merged:   pr.GetMerged(),
-	})
+	}
+	telegramText, err := h.loader.render("pull_request", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("pull_request.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

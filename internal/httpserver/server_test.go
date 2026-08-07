@@ -9,18 +9,25 @@ import (
 	"hedwig/internal/githubapp/githubapptest"
 	"hedwig/internal/notify"
 	"hedwig/internal/retry"
+	"hedwig/internal/slackbot/slackbottest"
 	"hedwig/internal/telegrambot/telegrambottest"
 
 	"github.com/rs/zerolog"
 )
 
+const testSlackSigningSecret = "test-slack-signing-secret"
+
 // testServer wires a real *Server to a real notify.Dispatcher and
-// retry.Handler, backed by fake GitHub/Telegram clients and a real
+// retry.Handler, backed by fake GitHub/Telegram/Slack clients and a real
 // temp-file SQLite repository — only the true external network edges are
-// faked, so these tests exercise the actual routing/business logic.
+// faked, so these tests exercise the actual routing/business logic. Slack
+// is always enabled (its webhook route registered) so slack_webhook_test.go
+// can exercise it directly; tests that don't care about Slack simply never
+// touch ts.slack.
 type testServer struct {
 	*Server
 	tg    *telegrambottest.FakeClient
+	slack *slackbottest.FakeClient
 	gh    *githubapptest.FakeClient
 	store database.Repository
 }
@@ -40,6 +47,7 @@ func newTestServer(t *testing.T, telegramSecret string) *testServer {
 	store := database.NewSQLiteRepository(db)
 
 	tg := telegrambottest.New()
+	slack := slackbottest.New()
 	gh := githubapptest.New()
 
 	// Write a minimal push template so GitHub webhook tests get a real notification.
@@ -48,13 +56,14 @@ func newTestServer(t *testing.T, telegramSecret string) *testServer {
 		t.Fatalf("write push template: %v", err)
 	}
 
-	retryH := retry.New(store, tg, gh, zerolog.Nop())
-	notifyD, err := notify.New(tg, 999, retryH, tmpDir, zerolog.Nop())
+	retryH := retry.New(store, tg, slack, "C1", gh, zerolog.Nop())
+	notifyD, err := notify.New(tg, 999, slack, "C1", retryH, tmpDir, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("notify.New() error = %v", err)
 	}
 
-	srv := New(gh, store, notifyD, retryH, telegramSecret, "/healthz", "/webhooks/telegram", zerolog.Nop())
+	srv := New(gh, store, notifyD, retryH, telegramSecret, "/healthz", true, "/webhooks/telegram",
+		true, testSlackSigningSecret, "/webhooks/slack/interactions", zerolog.Nop())
 
-	return &testServer{Server: srv, tg: tg, gh: gh, store: store}
+	return &testServer{Server: srv, tg: tg, slack: slack, gh: gh, store: store}
 }

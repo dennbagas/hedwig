@@ -114,7 +114,7 @@ func TestCreateAndGetRetry(t *testing.T) {
 	ctx := context.Background()
 
 	id, err := repo.CreateRetry(ctx, CICDRetry{
-		ChatID: 1, MessageID: 2, RunID: 99, Repo: "acme/widgets", Status: RetryStatusPending,
+		RunID: 99, Repo: "acme/widgets", Status: RetryStatusPending,
 	})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
@@ -130,7 +130,7 @@ func TestCreateAndGetRetry(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetRetry() returned nil, want the created record")
 	}
-	if got.ChatID != 1 || got.MessageID != 2 || got.RunID != 99 || got.Repo != "acme/widgets" || got.Status != RetryStatusPending {
+	if got.RunID != 99 || got.Repo != "acme/widgets" || got.Status != RetryStatusPending {
 		t.Errorf("GetRetry() = %+v, want matching fields from CreateRetry", got)
 	}
 	if got.CreatedAt.IsZero() {
@@ -149,11 +149,56 @@ func TestGetRetryNotFound(t *testing.T) {
 	}
 }
 
+func TestClaimPendingRetryOnlyWinsOnce(t *testing.T) {
+	_, repo := newTestRepo(t)
+	ctx := context.Background()
+
+	id, err := repo.CreateRetry(ctx, CICDRetry{RunID: 1, Repo: "a/b", Status: RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+
+	claimed, err := repo.ClaimPendingRetry(ctx, id, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("first ClaimPendingRetry() error = %v", err)
+	}
+	if !claimed {
+		t.Fatal("first ClaimPendingRetry() = false, want true (nothing else has claimed it yet)")
+	}
+
+	claimed, err = repo.ClaimPendingRetry(ctx, id, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("second ClaimPendingRetry() error = %v", err)
+	}
+	if claimed {
+		t.Error("second ClaimPendingRetry() = true, want false — simulates two near-simultaneous taps racing for the same retry")
+	}
+
+	rec, err := repo.GetRetry(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRetry() error = %v", err)
+	}
+	if rec.Status != RetryStatusRetried {
+		t.Errorf("status = %q, want %q", rec.Status, RetryStatusRetried)
+	}
+}
+
+func TestClaimPendingRetryNonexistentID(t *testing.T) {
+	_, repo := newTestRepo(t)
+	claimed, err := repo.ClaimPendingRetry(context.Background(), 999999, RetryStatusRetried)
+	if err != nil {
+		t.Fatalf("ClaimPendingRetry() error = %v", err)
+	}
+	if claimed {
+		t.Error("ClaimPendingRetry() = true, want false for a nonexistent id")
+	}
+}
+
 func TestUpdateRetryStatus(t *testing.T) {
 	_, repo := newTestRepo(t)
 	ctx := context.Background()
 
-	id, err := repo.CreateRetry(ctx, CICDRetry{ChatID: 1, MessageID: 2, RunID: 3, Repo: "a/b", Status: RetryStatusPending})
+	id, err := repo.CreateRetry(ctx, CICDRetry{RunID: 3, Repo: "a/b", Status: RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
@@ -175,15 +220,15 @@ func TestExpirePendingRetries(t *testing.T) {
 	db, repo := newTestRepo(t)
 	ctx := context.Background()
 
-	oldID, err := repo.CreateRetry(ctx, CICDRetry{ChatID: 1, MessageID: 1, RunID: 1, Repo: "a/b", Status: RetryStatusPending})
+	oldID, err := repo.CreateRetry(ctx, CICDRetry{RunID: 1, Repo: "a/b", Status: RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(old) error = %v", err)
 	}
-	recentID, err := repo.CreateRetry(ctx, CICDRetry{ChatID: 2, MessageID: 2, RunID: 2, Repo: "a/b", Status: RetryStatusPending})
+	recentID, err := repo.CreateRetry(ctx, CICDRetry{RunID: 2, Repo: "a/b", Status: RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(recent) error = %v", err)
 	}
-	retriedID, err := repo.CreateRetry(ctx, CICDRetry{ChatID: 3, MessageID: 3, RunID: 3, Repo: "a/b", Status: RetryStatusPending})
+	retriedID, err := repo.CreateRetry(ctx, CICDRetry{RunID: 3, Repo: "a/b", Status: RetryStatusPending})
 	if err != nil {
 		t.Fatalf("CreateRetry(retried) error = %v", err)
 	}
@@ -239,7 +284,7 @@ func TestExpirePendingRetriesNoneExpired(t *testing.T) {
 	_, repo := newTestRepo(t)
 	ctx := context.Background()
 
-	if _, err := repo.CreateRetry(ctx, CICDRetry{ChatID: 1, MessageID: 1, RunID: 1, Repo: "a/b", Status: RetryStatusPending}); err != nil {
+	if _, err := repo.CreateRetry(ctx, CICDRetry{RunID: 1, Repo: "a/b", Status: RetryStatusPending}); err != nil {
 		t.Fatalf("CreateRetry() error = %v", err)
 	}
 
@@ -249,5 +294,52 @@ func TestExpirePendingRetriesNoneExpired(t *testing.T) {
 	}
 	if len(expired) != 0 {
 		t.Errorf("ExpirePendingRetries() = %+v, want none expired", expired)
+	}
+}
+
+func TestCreateAndListRetryTargets(t *testing.T) {
+	_, repo := newTestRepo(t)
+	ctx := context.Background()
+
+	id, err := repo.CreateRetry(ctx, CICDRetry{RunID: 1, Repo: "a/b", Status: RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+
+	if err := repo.CreateRetryTarget(ctx, RetryTarget{RetryID: id, Platform: PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: "telegram text"}); err != nil {
+		t.Fatalf("CreateRetryTarget(telegram) error = %v", err)
+	}
+	if err := repo.CreateRetryTarget(ctx, RetryTarget{RetryID: id, Platform: PlatformSlack, ChatRef: "C1", MessageRef: "1234.5678", MessageText: "slack text"}); err != nil {
+		t.Fatalf("CreateRetryTarget(slack) error = %v", err)
+	}
+
+	targets, err := repo.ListRetryTargets(ctx, id)
+	if err != nil {
+		t.Fatalf("ListRetryTargets() error = %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("ListRetryTargets() = %+v, want 2 targets", targets)
+	}
+
+	byPlatform := map[string]RetryTarget{}
+	for _, tgt := range targets {
+		byPlatform[tgt.Platform] = tgt
+	}
+	if tg := byPlatform[PlatformTelegram]; tg.ChatRef != "1" || tg.MessageRef != "2" || tg.MessageText != "telegram text" {
+		t.Errorf("telegram target = %+v, want ChatRef=1 MessageRef=2 MessageText=telegram text", tg)
+	}
+	if sl := byPlatform[PlatformSlack]; sl.ChatRef != "C1" || sl.MessageRef != "1234.5678" || sl.MessageText != "slack text" {
+		t.Errorf("slack target = %+v, want ChatRef=C1 MessageRef=1234.5678 MessageText=slack text", sl)
+	}
+}
+
+func TestListRetryTargetsNoneFound(t *testing.T) {
+	_, repo := newTestRepo(t)
+	targets, err := repo.ListRetryTargets(context.Background(), 999999)
+	if err != nil {
+		t.Fatalf("ListRetryTargets() error = %v", err)
+	}
+	if len(targets) != 0 {
+		t.Errorf("ListRetryTargets() = %+v, want none for a nonexistent retry id", targets)
 	}
 }

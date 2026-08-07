@@ -1,0 +1,8 @@
+{{- if eq .RefType "branch" -}}
+✅ Push to `{{.Ref}}`
+
+Author: {{.Pusher}}
+Message: {{.Summary}}
+
+Repository: {{.Repo}}
+{{- end -}}

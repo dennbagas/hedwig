@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"hedwig/internal/retry"
-	"hedwig/internal/telegrambot"
 
 	"github.com/google/go-github/v88/github"
 )
@@ -20,11 +19,13 @@ type WorkflowRunContext struct {
 	RunID      int64
 }
 
-// workflowRunHandler handles workflow_run events using a configurable template.
-// On completed+failure it delegates to retry.Handler which attaches the retry button.
+// workflowRunHandler handles workflow_run events using configurable
+// templates. On completed+failure it delegates to retry.Handler, which
+// attaches the retry button and posts to whichever platforms are enabled
+// itself (see retry.Handler.NotifyFailure) — this handler renders both
+// platforms' text but does not send it directly in that case.
 type workflowRunHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	retryH *retry.Handler
 	loader *templateLoader
 }
@@ -34,7 +35,7 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
 	if !ok {
 		return nil
 	}
-	text, err := h.loader.render("workflow_run", WorkflowRunContext{
+	data := WorkflowRunContext{
 		Action:     e.GetAction(),
 		Name:       esc(e.GetWorkflowRun().GetName()),
 		Repo:       esc(e.GetRepo().GetFullName()),
@@ -43,11 +44,16 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
 		Conclusion: e.GetWorkflowRun().GetConclusion(),
 		URL:        esc(e.GetWorkflowRun().GetHTMLURL()),
 		RunID:      e.GetWorkflowRun().GetID(),
-	})
+	}
+	telegramText, err := h.loader.render("workflow_run", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("workflow_run.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
 	if e.GetAction() == "completed" && e.GetWorkflowRun().GetConclusion() == "failure" {
@@ -56,9 +62,8 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
 			e.GetRepo().GetOwner().GetLogin(),
 			e.GetRepo().GetName(),
 			e.GetWorkflowRun().GetID(),
-			text,
+			retry.FailureText{Telegram: telegramText, Slack: slackText},
 		)
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

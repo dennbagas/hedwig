@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"hedwig/internal/telegrambot"
-
 	"github.com/google/go-github/v88/github"
 )
 
@@ -19,8 +17,7 @@ type PushContext struct {
 }
 
 type pushHandler struct {
-	tg     telegrambot.Client
-	chatID int64
+	destinations
 	loader *templateLoader
 }
 
@@ -38,20 +35,24 @@ func (h *pushHandler) Handle(ctx context.Context, event any) error {
 	if strings.HasPrefix(rawRef, "refs/tags/") {
 		refType = "tag"
 	}
-	text, err := h.loader.render("push", PushContext{
+	data := PushContext{
 		Repo:    esc(e.GetRepo().GetFullName()),
 		Ref:     esc(shortRef(rawRef)),
 		RefType: refType,
 		Pusher:  esc(e.GetPusher().GetName()),
 		Commits: len(e.Commits),
 		Summary: summary,
-	})
+	}
+	telegramText, err := h.loader.render("push", data)
 	if err != nil {
 		return err
 	}
-	if text == "" {
+	slackText, err := h.loader.render("push.slack", data)
+	if err != nil {
+		return err
+	}
+	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	_, err = h.tg.SendMessage(ctx, h.chatID, text, telegrambot.WithParseMode("HTML"))
-	return err
+	return h.send(ctx, telegramText, slackText)
 }

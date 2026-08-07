@@ -3,6 +3,7 @@ package telegrambot
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -47,27 +48,45 @@ func (c *telegramClient) SendMessage(ctx context.Context, chatID int64, text str
 }
 
 func (c *telegramClient) EditMessage(ctx context.Context, chatID, messageID int64, text string, opts ...SendOption) error {
+	msgID, err := int64ToInt(messageID)
+	if err != nil {
+		return fmt.Errorf("edit message: %w", err)
+	}
 	p := ApplyOptions(opts...)
 	params := &bot.EditMessageTextParams{
 		ChatID:    chatID,
-		MessageID: int(messageID),
+		MessageID: msgID,
 		Text:      text,
 		ParseMode: models.ParseMode(p.ParseMode),
 	}
 	if p.Keyboard != nil {
 		params.ReplyMarkup = buildKeyboard(p.Keyboard)
 	}
-	_, err := c.b.EditMessageText(ctx, params)
+	_, err = c.b.EditMessageText(ctx, params)
 	return err
 }
 
 func (c *telegramClient) RemoveKeyboard(ctx context.Context, chatID, messageID int64) error {
-	_, err := c.b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+	msgID, err := int64ToInt(messageID)
+	if err != nil {
+		return fmt.Errorf("remove keyboard: %w", err)
+	}
+	_, err = c.b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:      chatID,
-		MessageID:   int(messageID),
+		MessageID:   msgID,
 		ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}},
 	})
 	return err
+}
+
+// int64ToInt safely narrows a message ID to the platform int type the
+// go-telegram/bot SDK expects, rejecting values that wouldn't round-trip
+// (e.g. on a 32-bit platform) instead of silently truncating them.
+func int64ToInt(v int64) (int, error) {
+	if v > math.MaxInt || v < math.MinInt {
+		return 0, fmt.Errorf("message id %d out of range for platform int", v)
+	}
+	return int(v), nil
 }
 
 func (c *telegramClient) AnswerCallback(ctx context.Context, callbackQueryID, text string) error {

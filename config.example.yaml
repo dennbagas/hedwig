@@ -9,11 +9,22 @@ github:
   webhook_secret: "replace-this-value" # set via APP_GITHUB_WEBHOOK_SECRET
 
 telegram:
+  enabled: true
   bot_token: "replace-this-value" # set via APP_TELEGRAM_BOT_TOKEN
   webhook_secret: "replace-this-value" # set via APP_TELEGRAM_WEBHOOK_SECRET
   webhook_path: /webhooks/telegram
   webhook_url: https://hedwig.example.com/webhooks/telegram
   chat_id: -100123456789
+
+# Slack is optional — set slack.enabled: false (or omit this section) to
+# notify Telegram only. At least one of telegram.enabled / slack.enabled
+# must be true.
+slack:
+  enabled: false
+  bot_token: "replace-this-value" # set via APP_SLACK_BOT_TOKEN
+  signing_secret: "replace-this-value" # set via APP_SLACK_SIGNING_SECRET
+  channel_id: "C0123456789"
+  webhook_path: /webhooks/slack/interactions
 
 database:
   path: /data/hedwig.db

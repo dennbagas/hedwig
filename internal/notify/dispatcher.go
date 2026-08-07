@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"hedwig/internal/retry"
+	"hedwig/internal/slackbot"
 	"hedwig/internal/telegrambot"
 
 	"github.com/rs/zerolog"
@@ -16,29 +17,28 @@ type EventHandler interface {
 
 type Dispatcher struct {
 	handlers map[string]EventHandler
-	tg       telegrambot.Client
-	chatID   int64
 	logger   zerolog.Logger
 }
 
-func newDispatcher(tg telegrambot.Client, chatID int64, logger zerolog.Logger) *Dispatcher {
+func newDispatcher(logger zerolog.Logger) *Dispatcher {
 	return &Dispatcher{
 		handlers: make(map[string]EventHandler),
-		tg:       tg,
-		chatID:   chatID,
 		logger:   logger,
 	}
 }
 
 // New creates a Dispatcher with all event handlers registered and templates
-// loaded from templatesDir. Returns an error if any template file fails to parse.
-func New(tg telegrambot.Client, chatID int64, retryH *retry.Handler, templatesDir string, logger zerolog.Logger) (*Dispatcher, error) {
+// loaded from templatesDir. Returns an error if any template file fails to
+// parse. tg/slack may be nil when that platform is disabled — every event
+// handler skips a nil platform's send.
+func New(tg telegrambot.Client, chatID int64, slack slackbot.Client, slackChanID string, retryH *retry.Handler, templatesDir string, logger zerolog.Logger) (*Dispatcher, error) {
 	templateLoader, err := newTemplateLoader(templatesDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
 	}
-	d := newDispatcher(tg, chatID, logger)
-	registerAll(d, tg, retryH, chatID, templateLoader)
+	d := newDispatcher(logger)
+	dest := destinations{tg: tg, chatID: chatID, slack: slack, slackChanID: slackChanID}
+	registerAll(d, dest, retryH, templateLoader)
 	return d, nil
 }
 
@@ -60,13 +60,13 @@ func (d *Dispatcher) Register(eventType string, h EventHandler) {
 	d.handlers[eventType] = h
 }
 
-func registerAll(d *Dispatcher, tg telegrambot.Client, retryH *retry.Handler, chatID int64, l *templateLoader) {
-	d.Register("push", &pushHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("pull_request", &pullRequestHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("create", &createHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("issue_comment", &issueCommentHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("pull_request_review", &pullRequestReviewHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("pull_request_review_comment", &pullRequestReviewCommentHandler{tg: tg, chatID: chatID, loader: l})
-	d.Register("workflow_run", &workflowRunHandler{tg: tg, chatID: chatID, retryH: retryH, loader: l})
-	d.Register("release", &releaseHandler{tg: tg, chatID: chatID, loader: l})
+func registerAll(d *Dispatcher, dest destinations, retryH *retry.Handler, l *templateLoader) {
+	d.Register("push", &pushHandler{destinations: dest, loader: l})
+	d.Register("pull_request", &pullRequestHandler{destinations: dest, loader: l})
+	d.Register("create", &createHandler{destinations: dest, loader: l})
+	d.Register("issue_comment", &issueCommentHandler{destinations: dest, loader: l})
+	d.Register("pull_request_review", &pullRequestReviewHandler{destinations: dest, loader: l})
+	d.Register("pull_request_review_comment", &pullRequestReviewCommentHandler{destinations: dest, loader: l})
+	d.Register("workflow_run", &workflowRunHandler{destinations: dest, retryH: retryH, loader: l})
+	d.Register("release", &releaseHandler{destinations: dest, loader: l})
 }

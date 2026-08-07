@@ -236,6 +236,147 @@ database:
 	}
 }
 
+func TestLoadNoChannelEnabled(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	yaml := fmt.Sprintf(`
+server:
+  port: 8080
+  healthz_path: /healthz
+
+github:
+  app_id: 123456
+  installation_id: 789012
+  private_key_path: %s
+  webhook_secret: "s"
+
+telegram:
+  enabled: false
+
+slack:
+  enabled: false
+
+database:
+  path: /data/hedwig.db
+
+notifications:
+  templates_dir: %s
+`, keyPath, os.TempDir())
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(yaml))
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("Load() error = nil, want error when no channel is enabled")
+	}
+	if !strings.Contains(err.Error(), "validate config") {
+		t.Errorf("Load() error = %q, want it to come from validation", err.Error())
+	}
+}
+
+func TestLoadSlackEnabledMissingFields(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	yaml := fmt.Sprintf(`
+server:
+  port: 8080
+  healthz_path: /healthz
+
+github:
+  app_id: 123456
+  installation_id: 789012
+  private_key_path: %s
+  webhook_secret: "s"
+
+telegram:
+  enabled: false
+
+slack:
+  enabled: true
+
+database:
+  path: /data/hedwig.db
+
+notifications:
+  templates_dir: %s
+`, keyPath, os.TempDir())
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(yaml))
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("Load() error = nil, want error for slack.enabled with no bot_token/signing_secret/channel_id/webhook_path")
+	}
+	if !strings.Contains(err.Error(), "validate config") {
+		t.Errorf("Load() error = %q, want it to come from validation", err.Error())
+	}
+}
+
+func TestLoadSlackOnlySuccess(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	yaml := fmt.Sprintf(`
+server:
+  port: 8080
+  healthz_path: /healthz
+
+github:
+  app_id: 123456
+  installation_id: 789012
+  private_key_path: %s
+  webhook_secret: "s"
+
+telegram:
+  enabled: false
+
+slack:
+  enabled: true
+  bot_token: "xoxb-test"
+  signing_secret: "test-signing-secret"
+  channel_id: "C0123456789"
+  webhook_path: /webhooks/slack/interactions
+
+database:
+  path: /data/hedwig.db
+
+notifications:
+  templates_dir: %s
+`, keyPath, os.TempDir())
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(yaml))
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v, want success with Telegram disabled and Slack fully configured", err)
+	}
+	if cfg.Telegram.Enabled {
+		t.Error("Telegram.Enabled = true, want false")
+	}
+	if !cfg.Slack.Enabled {
+		t.Error("Slack.Enabled = false, want true")
+	}
+	if cfg.Slack.ChannelID != "C0123456789" {
+		t.Errorf("Slack.ChannelID = %q, want C0123456789", cfg.Slack.ChannelID)
+	}
+}
+
+func TestLoadTelegramEnabledDefaultsToTrue(t *testing.T) {
+	// baseYAML never sets telegram.enabled explicitly; it must default to
+	// true so upgrading deployments keep notifying Telegram without any
+	// config change.
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(baseYAML(overrides{keyPath: keyPath})))
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Telegram.Enabled {
+		t.Error("Telegram.Enabled = false, want true (default)")
+	}
+	if cfg.Slack.Enabled {
+		t.Error("Slack.Enabled = true, want false (default)")
+	}
+}
+
 func TestLoadMalformedPrivateKey(t *testing.T) {
 	dir := t.TempDir()
 	badKeyPath := writeFile(t, dir, "bad-key.pem", []byte("not a pem file at all"))
