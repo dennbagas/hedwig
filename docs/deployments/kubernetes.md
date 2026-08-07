@@ -70,9 +70,9 @@ data:
       webhook_url: https://hedwig.example.com/webhooks/telegram
       chat_id: -100123456789
 
-    # Slack is optional — omit or set slack.enabled: false to notify
-    # Telegram only. At least one of telegram.enabled / slack.enabled
-    # must be true.
+    # Both channels are individually optional (either can be disabled/omitted);
+    # the only requirement is that at least one of telegram.enabled /
+    # slack.enabled is true.
     slack:
       enabled: true
       bot_token: ""          # set via APP_SLACK_BOT_TOKEN
