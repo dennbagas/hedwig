@@ -66,6 +66,30 @@ func TestPushHandler(t *testing.T) {
 	}
 }
 
+func TestPushHandlerSkipsDeletedBranch(t *testing.T) {
+	tg := telegrambottest.New()
+	// Mirrors the real templates/push.tmpl filter: branch pushes only,
+	// excluding ref deletions (e.g. a branch auto-deleted after a PR merge).
+	loader := mustLoader(t, map[string]string{
+		"push": `{{- if and (eq .RefType "branch") (not .Deleted) -}}push{{- end -}}`,
+	})
+	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100}, loader: loader}
+
+	event := unmarshalEvent[github.PushEvent](t, `{
+		"ref": "refs/heads/feature-x",
+		"deleted": true,
+		"pusher": {"name": "alice"},
+		"repository": {"full_name": "acme/widgets"}
+	}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 0 {
+		t.Errorf("tg.Sent = %+v, want none for a deleted-branch push", tg.Sent)
+	}
+}
+
 func TestPushHandlerBothPlatforms(t *testing.T) {
 	tg := telegrambottest.New()
 	slack := slackbottest.New()

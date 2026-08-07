@@ -1,4 +1,4 @@
-{{- if eq .RefType "branch" -}}
+{{- if and (eq .RefType "branch") (not .Deleted) -}}
 ✅ Push to `{{.Ref}}`
 
 Author: {{.Pusher}}
