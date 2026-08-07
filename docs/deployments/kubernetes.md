@@ -92,47 +92,44 @@ data:
 
 ### Notification templates
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hedwig-templates
-  namespace: hedwig
-data:
-  push.tmpl: |
-    ✅ Push to <code>{{.Ref}}</code>
-    Author: {{.Pusher}}
-    Message: {{.Summary}}
-    Repository: {{.Repo}}
-  push.slack.tmpl: |
-    ✅ Push to `{{.Ref}}`
-    Author: {{.Pusher}}
-    Message: {{.Summary}}
-    Repository: {{.Repo}}
-  pull_request.tmpl: |
-    {{- if eq .Action "opened" -}}
-    📢 New Pull Request!
-
-    Title: {{.Title}}
-    Author: {{.Author}}
-
-    Pull Request URL:
-    {{.URL}}
-    {{- end -}}
-  # add remaining event templates here — see templates/ in the repo for defaults.
-  # Every event type needs two files if Slack is enabled: <event>.tmpl
-  # (Telegram, HTML) and <event>.slack.tmpl (Slack, mrkdwn) — Hedwig renders
-  # each independently and skips whichever platform's template is missing
-  # or produces empty output.
-```
-
-Copy the defaults from the repo's [`templates/`](../templates/) directory as a starting point — this picks up every `*.tmpl` file, including the `*.slack.tmpl` ones, in one command:
+Telegram and Slack templates live in **separate ConfigMaps** — `hedwig-templates-telegram`
+and `hedwig-templates-slack` — so either can be edited/rotated independently (e.g. tweak
+Slack's wording without touching Telegram's, or vice versa). Ready-to-apply examples, kept
+in sync with the repo's actual default templates, are checked in at
+[`docs/deployments/configmap-templates-telegram.yaml`](configmap-templates-telegram.yaml)
+and [`docs/deployments/configmap-templates-slack.yaml`](configmap-templates-slack.yaml):
 
 ```bash
-kubectl create configmap hedwig-templates \
-  --namespace hedwig \
-  --from-file=./templates/
+kubectl apply -n hedwig -f docs/deployments/configmap-templates-telegram.yaml
+kubectl apply -n hedwig -f docs/deployments/configmap-templates-slack.yaml
 ```
+
+Or generate them directly from the repo's [`templates/`](../templates/) directory (every
+`<event>.tmpl` file is Telegram; every `<event>.slack.tmpl` file is Slack). `kubectl create
+configmap --from-file` only accepts a whole directory at once, which would mix both
+platforms together, so pass individual files instead to split them:
+
+```bash
+telegram_args=()
+for f in ./templates/*.tmpl; do
+  [[ "$f" == *.slack.tmpl ]] && continue
+  telegram_args+=(--from-file="$f")
+done
+kubectl create configmap hedwig-templates-telegram --namespace hedwig "${telegram_args[@]}"
+
+slack_args=()
+for f in ./templates/*.slack.tmpl; do
+  slack_args+=(--from-file="$f")
+done
+kubectl create configmap hedwig-templates-slack --namespace hedwig "${slack_args[@]}"
+```
+
+If that's too fiddly, just apply the checked-in YAML files instead.
+
+Both ConfigMaps are mounted into the **same** `/etc/hedwig/templates` directory via a
+[projected volume](#deployment) below — `templateLoader` scans one flat directory
+regardless of which ConfigMap a file came from, keyed by `<event>` for Telegram and
+`<event>.slack` for Slack.
 
 ## Persistent Volume
 
@@ -235,8 +232,17 @@ spec:
           configMap:
             name: hedwig-config
         - name: templates
-          configMap:
-            name: hedwig-templates
+          # optional: true on both sources so this doesn't block pod
+          # startup if you only created one platform's ConfigMap (e.g.
+          # Telegram-only, no hedwig-templates-slack at all).
+          projected:
+            sources:
+              - configMap:
+                  name: hedwig-templates-telegram
+                  optional: true
+              - configMap:
+                  name: hedwig-templates-slack
+                  optional: true
         - name: secrets
           secret:
             secretName: hedwig-secrets
@@ -300,14 +306,15 @@ Once these are in place, set `slack.enabled: true` in the `hedwig-config` Config
 
 ## Updating notification templates
 
-Templates are mounted from a ConfigMap, so they can be changed without restarting the pod:
+Templates are mounted from ConfigMaps, so they can be changed without restarting the pod.
+Edit the relevant checked-in YAML file and re-apply it — e.g. for a Slack wording change:
 
 ```bash
-# Edit a template locally, then replace the ConfigMap
-kubectl create configmap hedwig-templates \
-  --namespace hedwig \
-  --from-file=./templates/ \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -n hedwig -f docs/deployments/configmap-templates-slack.yaml
 
 # The pod picks up changes automatically (kubelet syncs ConfigMap mounts ~1 min)
 ```
+
+(Same for `configmap-templates-telegram.yaml` on the Telegram side.) Editing only the
+platform you changed avoids restating both ConfigMaps' full content for a one-line
+wording tweak.

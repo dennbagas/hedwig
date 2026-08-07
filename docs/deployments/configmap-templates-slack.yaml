@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hedwig-templates-slack
+  namespace: hedwig
+data:
+  create.slack.tmpl: |
+    {{- if eq .RefType "branch" -}}
+    🌿 New branch `{{.Ref}}` created in {{.Repo}} by {{.Creator}}
+    {{- end -}}
+  issue_comment.slack.tmpl: |
+    {{- if and .IsPR (eq .Action "created") -}}
+    💬 New comment on PR #{{.PRNumber}}
+
+    Title: {{.PRTitle}}
+    Author: {{.Author}}
+    Comment: {{.Body}}
+
+    Comment URL:
+    {{.URL}}
+    {{- end -}}
+  pull_request.slack.tmpl: |
+    {{- if eq .Action "opened" -}}
+    📢 New Pull Request!
+
+    Repository: {{.Repo}}
+    Title: {{.Title}}
+    Author: {{.Author}}
+
+    Pull Request URL:
+    {{.URL}}
+    {{- else if and (eq .Action "closed") .Merged -}}
+    ✅ Pull Request Merged!
+
+    Repository: {{.Repo}}
+    Title: {{.Title}}
+    Author: {{.Author}}
+    Merged by: {{.MergedBy}}
+
+    Pull Request URL:
+    {{.URL}}
+    {{- else if and (eq .Action "closed") (not .Merged) -}}
+    🚫 Pull Request Closed!
+
+    Repository: {{.Repo}}
+    Title: {{.Title}}
+    Author: {{.Author}}
+
+    Pull Request URL:
+    {{.URL}}
+    {{- end -}}
+  pull_request_review.slack.tmpl: |
+    {{- if eq .Action "submitted" -}}
+    👀 PR Review — {{.State}}
+
+    Title: {{.PRTitle}}
+    Reviewer: {{.Reviewer}}
+
+    Review URL:
+    {{.URL}}
+    {{- end -}}
+  pull_request_review_comment.slack.tmpl: |
+    {{- if eq .Action "created" -}}
+    📝 New review comment on PR #{{.PRNumber}}
+
+    Title: {{.PRTitle}}
+    Author: {{.Author}}
+    File: {{.File}}{{if .Line}}:{{.Line}}{{end}}
+    Comment: {{.Body}}
+
+    Comment URL:
+    {{.URL}}
+    {{- end -}}
+  push.slack.tmpl: |
+    {{- if eq .RefType "branch" -}}
+    ✅ Push to `{{.Ref}}`
+
+    Author: {{.Pusher}}
+    Message: {{.Summary}}
+
+    Repository: {{.Repo}}
+    {{- end -}}
+  release.slack.tmpl: |
+    {{- if eq .Action "published" -}}
+    🚀 Tag Release {{.TagName}}
+
+    Repository: {{.Repo}}
+    Author: {{.Author}}{{if .Prerelease}} (pre-release){{end}}
+
+    Description:
+    {{.Body}}
+
+    🔗 <{{.URL}}|View Release>
+    {{- end -}}
+  workflow_run.slack.tmpl: |
+    {{- if and (eq .Action "completed") (eq .Name "Build and Deploy") -}}
+    {{- if eq .Conclusion "success" -}}
+    ✅ Build Pipeline succeeded
+    Project: {{.Repo}}
+    Tag: {{.Branch}}
+    Commit: {{.HeadSHA}}
+    URL: {{.URL}}
+    {{- else if eq .Conclusion "failure" -}}
+    ❌ Build Pipeline failed
+    Project: {{.Repo}}
+    Tag: {{.Branch}}
+    Commit: {{.HeadSHA}}
+    URL: {{.URL}}
+    {{- else -}}
+    ⚠️ Build Pipeline {{.Conclusion}}
+    Project: {{.Repo}}
+    Tag: {{.Branch}}
+    Commit: {{.HeadSHA}}
+    URL: {{.URL}}
+    {{- end -}}
+    {{- end -}}
