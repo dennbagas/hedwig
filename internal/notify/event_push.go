@@ -11,6 +11,7 @@ type PushContext struct {
 	Repo    string
 	Ref     string
 	RefType string // "branch" or "tag"
+	Deleted bool   // true when this push deleted the ref (e.g. branch auto-deleted after a PR merge)
 	Pusher  string
 	Commits int
 	Summary string
@@ -39,6 +40,7 @@ func (h *pushHandler) Handle(ctx context.Context, event any) error {
 		Repo:    esc(e.GetRepo().GetFullName()),
 		Ref:     esc(shortRef(rawRef)),
 		RefType: refType,
+		Deleted: e.GetDeleted(),
 		Pusher:  esc(e.GetPusher().GetName()),
 		Commits: len(e.Commits),
 		Summary: summary,
