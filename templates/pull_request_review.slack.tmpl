@@ -1,5 +1,9 @@
 {{- if eq .Action "submitted" -}}
 👀 PR Review — {{.State}}
 
-{{quote (printf "Title: %s\nReviewer: %s\n\nReview URL:\n%s" .PRTitle .Reviewer .URL)}}
+Title: {{.PRTitle}}
+Reviewer: {{.Reviewer}}
+
+Review URL:
+{{.URL}}
 {{- end -}}

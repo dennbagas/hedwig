@@ -114,40 +114,6 @@ func TestRenderEmptyOutputTrimmed(t *testing.T) {
 	}
 }
 
-func TestQuote(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"one line", "> one line"},
-		{"line1\nline2", "> line1\n> line2"},
-		{"a\n\nb", "> a\n> \n> b"}, // blank lines get quoted too, matching Slack's own per-line requirement
-		{"", "> "},
-	}
-	for _, tt := range tests {
-		if got := quote(tt.in); got != tt.want {
-			t.Errorf("quote(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
-func TestQuoteUsableFromTemplate(t *testing.T) {
-	l, err := newTemplateLoaderFromStrings(map[string]string{
-		"push": `{{quote (printf "Repository: %s\nAuthor: %s" .Repo .Pusher)}}`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, err := l.render("push", struct{ Repo, Pusher string }{"acme/widgets", "alice"})
-	if err != nil {
-		t.Fatalf("render() error = %v", err)
-	}
-	want := "> Repository: acme/widgets\n> Author: alice"
-	if text != want {
-		t.Errorf("render() = %q, want %q", text, want)
-	}
-}
-
 func TestRenderExecutionError(t *testing.T) {
 	l, err := newTemplateLoaderFromStrings(map[string]string{
 		"push": `{{.Missing}}`, // accesses a field that doesn't exist on the given type

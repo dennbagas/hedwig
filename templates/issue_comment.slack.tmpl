@@ -1,5 +1,10 @@
 {{- if and .IsPR (eq .Action "created") -}}
 💬 New comment on PR #{{.PRNumber}}
 
-{{quote (printf "Title: %s\nAuthor: %s\nComment: %s\n\nComment URL:\n%s" .PRTitle .Author .Body .URL)}}
+Title: {{.PRTitle}}
+Author: {{.Author}}
+Comment: {{.Body}}
+
+Comment URL:
+{{.URL}}
 {{- end -}}

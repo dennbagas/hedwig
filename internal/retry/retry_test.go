@@ -12,6 +12,7 @@ import (
 
 	"hedwig/internal/database"
 	"hedwig/internal/githubapp/githubapptest"
+	"hedwig/internal/slackbot"
 	"hedwig/internal/slackbot/slackbottest"
 	"hedwig/internal/telegrambot"
 	"hedwig/internal/telegrambot/telegrambottest"
@@ -114,8 +115,9 @@ func TestNotifyFailureSuccessBothPlatforms(t *testing.T) {
 	if slackMsg.Channel != testSlackChannel {
 		t.Errorf("slack channel = %q, want %q", slackMsg.Channel, testSlackChannel)
 	}
-	if slackMsg.Text != testSlackText {
-		t.Errorf("slack text = %q, want %q", slackMsg.Text, testSlackText)
+	wantSlackSentText := slackbot.FormatQuoted(testSlackText)
+	if slackMsg.Text != wantSlackSentText {
+		t.Errorf("slack text = %q, want %q (the sent text is blockquoted; the stored MessageText below stays raw)", slackMsg.Text, wantSlackSentText)
 	}
 	if len(slackMsg.Buttons) != 1 || slackMsg.Buttons[0].Text != "Retry failed jobs" {
 		t.Fatalf("slack buttons = %+v, want one Retry failed jobs button", slackMsg.Buttons)
@@ -465,7 +467,7 @@ func TestHandleCallbackSuccess(t *testing.T) {
 		t.Errorf("telegram keyboard = %+v, want empty keyboard to remove the retry button", tg.Sent[0].Params.Keyboard)
 	}
 
-	wantSlackText := testSlackText + "\n\n✅ Retry request sent"
+	wantSlackText := slackbot.FormatQuoted(testSlackText + "\n\n✅ Retry request sent")
 	if len(slack.Sent) != 1 || slack.Sent[0].Text != wantSlackText {
 		t.Fatalf("slack.Sent = %+v, want one message with text %q (retry on telegram also updates slack)", slack.Sent, wantSlackText)
 	}

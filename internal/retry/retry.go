@@ -107,7 +107,7 @@ func (h *Handler) notifyTelegram(ctx context.Context, chatID, retryID int64, cal
 
 func (h *Handler) notifySlack(ctx context.Context, retryID int64, callbackData, text string) error {
 	buttons := []slackbot.Button{{Text: "Retry failed jobs", Value: callbackData}}
-	ts, err := h.slack.PostMessage(ctx, h.slackChanID, text, buttons)
+	ts, err := h.slack.PostMessage(ctx, h.slackChanID, slackbot.FormatQuoted(text), buttons)
 	if err != nil {
 		return fmt.Errorf("send slack failure notification: %w", err)
 	}
@@ -278,7 +278,7 @@ func (h *Handler) fanOut(ctx context.Context, targets []database.RetryTarget, bu
 			if !clearKeyboard {
 				buttons = []slackbot.Button{{Text: "Retry failed jobs", Value: callbackData}}
 			}
-			if err := h.slack.UpdateMessage(ctx, t.ChatRef, t.MessageRef, text, buttons); err != nil {
+			if err := h.slack.UpdateMessage(ctx, t.ChatRef, t.MessageRef, slackbot.FormatQuoted(text), buttons); err != nil {
 				h.logger.Warn().Err(err).Int64("retry_id", t.RetryID).Msg("failed to update slack retry message")
 			}
 		default:

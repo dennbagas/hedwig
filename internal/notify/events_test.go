@@ -95,7 +95,7 @@ func TestPushHandlerBothPlatforms(t *testing.T) {
 	slack := slackbottest.New()
 	loader := mustLoader(t, map[string]string{
 		"push":       `telegram: {{.Repo}} {{.Pusher}}`,
-		"push.slack": `slack: {{.Repo}} {{.Pusher}}`,
+		"push.slack": "slack header\n\n{{.Repo}} {{.Pusher}}",
 	})
 	h := &pushHandler{destinations: destinations{tg: tg, chatID: 100, slack: slack, slackChanID: "C1"}, loader: loader}
 
@@ -111,8 +111,9 @@ func TestPushHandlerBothPlatforms(t *testing.T) {
 	if len(tg.Sent) != 1 || tg.Sent[0].Text != "telegram: acme/widgets alice" {
 		t.Fatalf("tg.Sent = %+v, want one telegram-formatted message", tg.Sent)
 	}
-	if len(slack.Sent) != 1 || slack.Sent[0].Text != "slack: acme/widgets alice" {
-		t.Fatalf("slack.Sent = %+v, want one slack-formatted message", slack.Sent)
+	wantSlackText := "slack header\n\n> acme/widgets alice"
+	if len(slack.Sent) != 1 || slack.Sent[0].Text != wantSlackText {
+		t.Fatalf("slack.Sent = %+v, want one slack-formatted message with quoted detail block (%q)", slack.Sent, wantSlackText)
 	}
 	if slack.Sent[0].Channel != "C1" {
 		t.Errorf("slack channel = %q, want C1", slack.Sent[0].Channel)

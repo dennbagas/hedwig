@@ -33,7 +33,7 @@ func (d destinations) send(ctx context.Context, telegramText, slackText string) 
 		}
 	}
 	if d.slack != nil && slackText != "" {
-		if _, err := d.slack.PostMessage(ctx, d.slackChanID, slackText, nil); err != nil {
+		if _, err := d.slack.PostMessage(ctx, d.slackChanID, slackbot.FormatQuoted(slackText), nil); err != nil {
 			errs = append(errs, fmt.Errorf("send slack: %w", err))
 		}
 	}
