@@ -1,11 +1,7 @@
 {{- if eq .Action "created" -}}
+{{- $file := .File -}}
+{{- if .Line -}}{{- $file = printf "%s:%d" .File .Line -}}{{- end -}}
 📝 New review comment on PR #{{.PRNumber}}
 
-Title: {{.PRTitle}}
-Author: {{.Author}}
-File: {{.File}}{{if .Line}}:{{.Line}}{{end}}
-Comment: {{.Body}}
-
-Comment URL:
-{{.URL}}
+{{quote (printf "Title: %s\nAuthor: %s\nFile: %s\nComment: %s\n\nComment URL:\n%s" .PRTitle .Author $file .Body .URL)}}
 {{- end -}}

@@ -1,8 +1,5 @@
 {{- if and (eq .RefType "branch") (not .Deleted) -}}
 ✅ Push to `{{.Ref}}`
 
-Author: {{.Pusher}}
-Message: {{.Summary}}
-
-Repository: {{.Repo}}
+{{quote (printf "Repository: %s\nAuthor: %s\nMessage: %s" .Repo .Pusher .Summary)}}
 {{- end -}}

@@ -1,21 +1,15 @@
 {{- if and (eq .Action "completed") (eq .Name "Build and Deploy") -}}
 {{- if eq .Conclusion "success" -}}
 ✅ Build Pipeline succeeded
-Project: {{.Repo}}
-Tag: {{.Branch}}
-Commit: {{.HeadSHA}}
-URL: {{.URL}}
+
+{{quote (printf "Project: %s\nTag: %s\nCommit: %s\nURL: %s" .Repo .Branch .HeadSHA .URL)}}
 {{- else if eq .Conclusion "failure" -}}
 ❌ Build Pipeline failed
-Project: {{.Repo}}
-Tag: {{.Branch}}
-Commit: {{.HeadSHA}}
-URL: {{.URL}}
+
+{{quote (printf "Project: %s\nTag: %s\nCommit: %s\nURL: %s" .Repo .Branch .HeadSHA .URL)}}
 {{- else -}}
 ⚠️ Build Pipeline {{.Conclusion}}
-Project: {{.Repo}}
-Tag: {{.Branch}}
-Commit: {{.HeadSHA}}
-URL: {{.URL}}
+
+{{quote (printf "Project: %s\nTag: %s\nCommit: %s\nURL: %s" .Repo .Branch .HeadSHA .URL)}}
 {{- end -}}
 {{- end -}}
