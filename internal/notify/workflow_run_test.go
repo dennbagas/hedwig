@@ -153,6 +153,32 @@ func TestWorkflowRunHandlerCompletedFailureDelegatesToRetry(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunHandlerCompletedFailureRetryDisabled(t *testing.T) {
+	tg := telegrambottest.New()
+	h := &workflowRunHandler{destinations: destinations{tg: tg, chatID: 1}, retryDisabled: true, loader: workflowRunLoader(t)}
+	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
+		"action": "completed",
+		"workflow_run": {"id": 55, "name": "CI", "conclusion": "failure", "html_url": "https://github.com/acme/widgets/actions/runs/55"},
+		"repository": {"full_name": "acme/widgets", "name": "widgets", "owner": {"login": "acme"}}
+	}`)
+
+	// retryH is nil, so a nil-pointer call would panic if retryDisabled were
+	// not honored — proving the handler takes the plain-send path instead.
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	if len(tg.Sent) != 1 {
+		t.Fatalf("len(tg.Sent) = %d, want 1 (plain send, no button edit)", len(tg.Sent))
+	}
+	if !strings.Contains(tg.Sent[0].Text, "CI/CD failure") {
+		t.Errorf("text = %q, want it to contain CI/CD failure", tg.Sent[0].Text)
+	}
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want no retry button when retry is disabled", tg.Sent[0].Params.Keyboard)
+	}
+}
+
 func TestWorkflowRunHandlerCompletedFailureDelegatesToRetryBothPlatforms(t *testing.T) {
 	retryH, tg, slack, _ := newTestRetryHandlerBothPlatforms(t)
 	h := &workflowRunHandler{destinations: destinations{tg: tg, chatID: 1, slack: slack, slackChanID: "C1"}, retryH: retryH, loader: workflowRunLoaderBothPlatforms(t)}

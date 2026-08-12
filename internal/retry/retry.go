@@ -178,24 +178,40 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 
 	if err := h.github.RerunFailedJobs(ctx, owner, repo, rec.RunID); err != nil {
 		h.logger.Error().Err(err).Int64("run_id", rec.RunID).Msg("rerun failed jobs API error")
-		// Only reset status to pending for confirmed rejections from GitHub
-		// (e.g. 404 Not Found, 422 Unprocessable Entity). For ambiguous errors
-		// (network timeouts, 5xx, non-ErrorResponse errors) leave status as
-		// "retried" to prevent double-trigger races — we can't be sure whether
-		// GitHub actually accepted the rerun despite the error.
-		if isConfirmedRejection(err) {
+		// Non-retryable rejections (e.g. "This workflow run cannot be
+		// retried") mean tapping the button again will just fail the same
+		// way, so leave status as "retried" and drop the button entirely.
+		// Other confirmed rejections (e.g. 404 Not Found, 422 Unprocessable
+		// Entity for a genuinely transient/fixable cause) reset to pending
+		// so the button stays usable. Ambiguous errors (network timeouts,
+		// 5xx, non-ErrorResponse errors) also leave status as "retried" to
+		// prevent double-trigger races — we can't be sure whether GitHub
+		// actually accepted the rerun despite the error. The button is only
+		// re-attached when the status was actually reset to pending —
+		// otherwise a second tap would just hit the "no longer valid" branch,
+		// so keeping the button visible in that case would be misleading.
+		nonRetryable := isNonRetryableRun(err)
+		resetToPending := isConfirmedRejection(err) && !nonRetryable
+		if resetToPending {
 			if resetErr := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusPending); resetErr != nil {
 				h.logger.Warn().Err(resetErr).Int64("retry_id", retryID).Msg("failed to reset retry status to pending after confirmed rejection")
 			}
 		}
 		checkURL := fmt.Sprintf("https://github.com/%s/actions/runs/%d", rec.Repo, rec.RunID)
 		h.fanOut(ctx, targets, func(t database.RetryTarget) string {
+			if nonRetryable {
+				if t.Platform == database.PlatformSlack {
+					return fmt.Sprintf("This workflow run cannot be retried. Please open the GitHub Action directly.\n<%s|Open GitHub Action>", checkURL)
+				}
+				return fmt.Sprintf("This workflow run cannot be retried. Please open the GitHub Action directly.\n<a href=\"%s\">Open GitHub Action</a>",
+					html.EscapeString(checkURL))
+			}
 			if t.Platform == database.PlatformSlack {
 				return fmt.Sprintf("Failed to retry: %s\n<%s|Check on GitHub>", escapeSlackMrkdwn(err.Error()), checkURL)
 			}
 			return fmt.Sprintf("Failed to retry: %s\n<a href=\"%s\">Check on GitHub</a>",
 				html.EscapeString(err.Error()), html.EscapeString(checkURL))
-		}, false)
+		}, !resetToPending)
 		return nil
 	}
 
@@ -222,6 +238,19 @@ func isConfirmedRejection(err error) bool {
 	// retry) are definitive rejections; 5xx server errors are ambiguous.
 	code := ghErr.Response.StatusCode
 	return code >= http.StatusBadRequest && code < http.StatusInternalServerError && code != http.StatusTooManyRequests
+}
+
+// isNonRetryableRun returns true when GitHub's error message indicates the
+// run itself can never be retried again (e.g. a rerun is already in
+// progress, or the run has no failed jobs left) — as opposed to a rejection
+// that might succeed on a later attempt. Detected by substring match on the
+// documented error message since go-github exposes no typed error for this.
+func isNonRetryableRun(err error) bool {
+	var ghErr *github.ErrorResponse
+	if !errors.As(err, &ghErr) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ghErr.Message), "cannot be retried")
 }
 
 // escapeSlackMrkdwn escapes the three characters Slack's mrkdwn treats as

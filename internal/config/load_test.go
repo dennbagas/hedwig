@@ -377,6 +377,37 @@ func TestLoadTelegramEnabledDefaultsToTrue(t *testing.T) {
 	}
 }
 
+func TestLoadRetryEnabledDefaultsToFalse(t *testing.T) {
+	// baseYAML never sets retry.enabled explicitly; it must default to false
+	// — the retry button is opt-in, not on by default.
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(baseYAML(overrides{keyPath: keyPath})))
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Retry.Enabled {
+		t.Error("Retry.Enabled = true, want false (default)")
+	}
+}
+
+func TestLoadRetryEnabledExplicitOverride(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := writeFile(t, dir, "key.pem", rsaPKCS1PEM(t))
+	yaml := baseYAML(overrides{keyPath: keyPath}) + "\nretry:\n  enabled: true\n"
+	cfgPath := writeFile(t, dir, "config.yaml", []byte(yaml))
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Retry.Enabled {
+		t.Error("Retry.Enabled = false, want true (explicit override)")
+	}
+}
+
 func TestLoadMalformedPrivateKey(t *testing.T) {
 	dir := t.TempDir()
 	badKeyPath := writeFile(t, dir, "bad-key.pem", []byte("not a pem file at all"))

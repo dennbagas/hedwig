@@ -90,7 +90,7 @@ func TestRegisterAllWiresEveryEventType(t *testing.T) {
 	d := newDispatcher(zerolog.Nop())
 	// retryH is nil: every event used below takes the workflow_run
 	// "requested" branch, which never touches it.
-	registerAll(d, destinations{tg: tg, chatID: 1}, nil, allEventTypesLoader(t))
+	registerAll(d, destinations{tg: tg, chatID: 1}, nil, true, allEventTypesLoader(t))
 
 	tests := []struct {
 		eventType string

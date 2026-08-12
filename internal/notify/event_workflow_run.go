@@ -27,7 +27,11 @@ type WorkflowRunContext struct {
 type workflowRunHandler struct {
 	destinations
 	retryH *retry.Handler
-	loader *templateLoader
+	// retryDisabled turns off the retry button entirely (config: retry.enabled).
+	// Kept as the negative so a zero-value handler in tests still exercises the
+	// default (retry enabled) behavior without setting this field explicitly.
+	retryDisabled bool
+	loader        *templateLoader
 }
 
 func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
@@ -56,7 +60,7 @@ func (h *workflowRunHandler) Handle(ctx context.Context, event any) error {
 	if telegramText == "" && slackText == "" {
 		return nil
 	}
-	if e.GetAction() == "completed" && e.GetWorkflowRun().GetConclusion() == "failure" {
+	if !h.retryDisabled && e.GetAction() == "completed" && e.GetWorkflowRun().GetConclusion() == "failure" {
 		return h.retryH.NotifyFailure(ctx, h.chatID,
 			e.GetWorkflowRun().GetName(),
 			e.GetRepo().GetOwner().GetLogin(),

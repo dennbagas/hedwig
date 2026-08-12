@@ -8,6 +8,7 @@ type Config struct {
 	Database      DatabaseConfig      `koanf:"database"`
 	Logging       LoggingConfig       `koanf:"logging"`
 	Notifications NotificationsConfig `koanf:"notifications"`
+	Retry         RetryConfig         `koanf:"retry"`
 }
 
 type ServerConfig struct {
@@ -56,4 +57,11 @@ type LoggingConfig struct {
 
 type NotificationsConfig struct {
 	TemplatesDir string `koanf:"templates_dir" validate:"required,dir"`
+}
+
+// RetryConfig gates the CI/CD "Retry failed jobs" button. Defaults to
+// disabled (Go zero value) — workflow_run failure notifications are plain
+// messages (no button, no GitHub rerun call) unless explicitly opted in.
+type RetryConfig struct {
+	Enabled bool `koanf:"enabled"`
 }

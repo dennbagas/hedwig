@@ -57,7 +57,7 @@ func newTestServer(t *testing.T, telegramSecret string) *testServer {
 	}
 
 	retryH := retry.New(store, tg, slack, "C1", gh, zerolog.Nop())
-	notifyD, err := notify.New(tg, 999, slack, "C1", retryH, tmpDir, zerolog.Nop())
+	notifyD, err := notify.New(tg, 999, slack, "C1", retryH, true, tmpDir, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("notify.New() error = %v", err)
 	}

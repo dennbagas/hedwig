@@ -34,3 +34,9 @@ logging:
 
 notifications:
   templates_dir: ./templates
+
+# Opt-in: set retry.enabled: true to add a "Retry failed jobs" button to
+# workflow_run failure notifications. Defaults to false (plain messages, no
+# GitHub rerun call).
+retry:
+  enabled: false
