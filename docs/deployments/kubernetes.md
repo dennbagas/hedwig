@@ -8,7 +8,7 @@ This guide covers deploying Hedwig on Kubernetes using the container image from 
 - A namespace to deploy into (examples use `hedwig`)
 - The GitHub App private key (`.pem` file)
 - Bot token and webhook secrets from Telegram and/or Slack, and from GitHub
-- At least one of Telegram or Slack must be enabled — see [Slack app setup](#slack-app-setup) if you're enabling Slack
+- At least one of Telegram or Slack must be enabled — see [docs/setup/telegram.md](../setup/telegram.md) / [docs/setup/slack.md](../setup/slack.md) for how to get the values each needs, and [docs/setup/github-app.md](../setup/github-app.md) for the GitHub App
 
 ## Secrets
 
@@ -88,6 +88,13 @@ data:
 
     notifications:
       templates_dir: /etc/hedwig/templates
+
+    # Opt-in: set retry.enabled: true to add a "Retry failed jobs" button to
+    # workflow_run failure notifications. Defaults to false (plain messages,
+    # no GitHub rerun call). Requires the Slack Interactivity Request URL
+    # below if Slack is enabled — the button doesn't work without it.
+    retry:
+      enabled: false
 ```
 
 ### Notification templates
@@ -294,15 +301,7 @@ Replace `hedwig.example.com` with your actual domain. The domain must be reachab
 
 ## Slack app setup
 
-Slack notifications and the interactive retry button require a Slack app configured before you fill in `slack.*` config/secrets. This is a one-time, operational (not code) setup:
-
-1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) (from scratch or a manifest) in the target workspace.
-2. Under **OAuth & Permissions**, add the `chat:write` Bot Token Scope (add `chat:write.public` too if you don't want to invite the bot to the channel first). Install the app to the workspace and copy the **Bot User OAuth Token** (`xoxb-...`) — this is `slack-bot-token` / `APP_SLACK_BOT_TOKEN`.
-3. Under **Basic Information**, copy the **Signing Secret** — this is `slack-signing-secret` / `APP_SLACK_SIGNING_SECRET`. Hedwig uses it to verify that interaction requests actually came from Slack (HMAC signature check on `/webhooks/slack/interactions`).
-4. Under **Interactivity & Shortcuts**, turn Interactivity on and set the **Request URL** to `https://hedwig.example.com/webhooks/slack/interactions` (your Ingress host + the `slack.webhook_path` from config). Slack sends the CI/CD retry button's tap events here.
-5. Invite the bot to the channel you want notifications in (`/invite @your-bot-name`), then get that channel's ID (right-click the channel → **View channel details**, ID is at the bottom) — this is `slack.channel_id` in config.
-
-Once these are in place, set `slack.enabled: true` in the `hedwig-config` ConfigMap and add the two secret keys to `hedwig-secrets` as shown above, then roll the deployment (`kubectl rollout restart deployment/hedwig -n hedwig`) to pick up the change.
+Creating the Slack app itself (bot token, signing secret, Interactivity Request URL, channel ID) is covered in [docs/setup/slack.md](../setup/slack.md) — it's the same steps regardless of how you deploy Hedwig. Once you have those values, set `slack.enabled: true` in the `hedwig-config` ConfigMap and add `slack-bot-token`/`slack-signing-secret` to `hedwig-secrets` as shown above, then roll the deployment (`kubectl rollout restart deployment/hedwig -n hedwig`) to pick up the change.
 
 ## Updating notification templates
 

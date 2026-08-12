@@ -267,7 +267,7 @@ func TestHandleCallbackRetryDisabledRejectsPendingRecord(t *testing.T) {
 	}
 }
 
-func TestHandleCallbackNonPendingStatusFansOutToBothPlatforms(t *testing.T) {
+func TestHandleCallbackNonPendingStatusDoesNotEditEitherPlatform(t *testing.T) {
 	h, tg, slack, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
@@ -289,17 +289,16 @@ func TestHandleCallbackNonPendingStatusFansOutToBothPlatforms(t *testing.T) {
 	if len(gh.RerunCalls) != 0 {
 		t.Errorf("RerunCalls = %+v, want none for an already-expired retry", gh.RerunCalls)
 	}
-	if !strings.Contains(tg.Sent[0].Text, "no longer valid") {
-		t.Errorf("telegram text = %q, want 'no longer valid'", tg.Sent[0].Text)
+	// Whatever resolved this retry earlier (success, non-retryable rejection,
+	// or the expiry sweep) already delivered the outcome and dropped the
+	// button on every platform via its own fanOut. This call must not edit
+	// anything — only the call that actually resolves a retry may ever edit
+	// its messages, so a later tap here is a pure no-op.
+	if len(tg.Sent) != 0 {
+		t.Errorf("tg.Sent = %+v, want no telegram edits", tg.Sent)
 	}
-	if tg.Sent[0].Params.Keyboard == nil || len(tg.Sent[0].Params.Keyboard) != 0 {
-		t.Errorf("telegram keyboard = %+v, want empty keyboard to remove the button", tg.Sent[0].Params.Keyboard)
-	}
-	if len(slack.Sent) != 1 || !strings.Contains(slack.Sent[0].Text, "no longer valid") {
-		t.Fatalf("slack.Sent = %+v, want a single 'no longer valid' message (tapping either platform updates both)", slack.Sent)
-	}
-	if len(slack.Sent[0].Buttons) != 0 {
-		t.Errorf("slack buttons = %+v, want none (button cleared)", slack.Sent[0].Buttons)
+	if len(slack.Sent) != 0 {
+		t.Errorf("slack.Sent = %+v, want no slack edits", slack.Sent)
 	}
 }
 
@@ -334,6 +333,9 @@ func TestHandleCallbackRerunError(t *testing.T) {
 	}
 	if !strings.Contains(text, "github.com/acme/widgets/actions/runs/55") {
 		t.Errorf("text = %q, want a link back to the run", text)
+	}
+	if !strings.Contains(text, "CI/CD failed") {
+		t.Errorf("text = %q, want the original failure message preserved", text)
 	}
 	// Status stays "retried" (not reset to pending) for an ambiguous error, so a
 	// second tap would only hit the "no longer valid" branch — the button must
@@ -418,6 +420,11 @@ func TestHandleCallbackRerunNonRetryableRunDropsButton(t *testing.T) {
 	if !strings.Contains(text, "github.com/acme/widgets/actions/runs/55") {
 		t.Errorf("text = %q, want a link back to the run", text)
 	}
+	// The original failure notification content must stay visible — the
+	// warning is appended, not a full replacement of the message.
+	if !strings.Contains(text, "CI/CD failed") {
+		t.Errorf("text = %q, want the original failure message preserved", text)
+	}
 	if len(tg.Sent[0].Params.Keyboard) != 0 {
 		t.Errorf("keyboard = %+v, want the retry button dropped (retrying can never succeed)", tg.Sent[0].Params.Keyboard)
 	}
@@ -485,11 +492,70 @@ func TestHandleCallbackRerunErrorEscapesSlackMrkdwn(t *testing.T) {
 	}
 }
 
+// stealClaimStore wraps a real repository and, on the first GetRetry call,
+// claims the retry itself (simulating a concurrent winner elsewhere) before
+// returning the original pending snapshot to the caller — deterministically
+// reproducing the exact race window between HandleCallback's own GetRetry
+// and ClaimPendingRetry calls, which sequential test calls can't trigger
+// (by the time a second sequential call runs GetRetry, the first has
+// already fully completed and GetRetry itself would see non-pending).
+type stealClaimStore struct {
+	database.Repository
+	stolen bool
+}
+
+func (s *stealClaimStore) GetRetry(ctx context.Context, id int64) (*database.CICDRetry, error) {
+	rec, err := s.Repository.GetRetry(ctx, id)
+	if err != nil || rec == nil || s.stolen {
+		return rec, err
+	}
+	s.stolen = true
+	if _, claimErr := s.Repository.ClaimPendingRetry(ctx, id, database.RetryStatusRetried); claimErr != nil {
+		return nil, claimErr
+	}
+	return rec, nil // caller still sees the pre-steal "pending" snapshot
+}
+
+func TestHandleCallbackLostClaimRaceDoesNotEditMessage(t *testing.T) {
+	_, realStore := newTestRepo(t)
+	store := &stealClaimStore{Repository: realStore}
+	tg := telegrambottest.New()
+	slack := slackbottest.New()
+	gh := githubapptest.New()
+	h := New(store, tg, slack, testSlackChannel, gh, true, zerolog.Nop())
+	ctx := context.Background()
+
+	id, err := realStore.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := realStore.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: testTelegramText}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
+	}
+
+	// HandleCallback's own GetRetry sees "pending" (the pre-steal snapshot),
+	// but by the time it calls ClaimPendingRetry, stealClaimStore has already
+	// claimed the row out from under it — the exact !claimed race.
+	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	if len(gh.RerunCalls) != 0 {
+		t.Errorf("RerunCalls = %+v, want none — this call lost the claim race", gh.RerunCalls)
+	}
+	// The loser must not edit anything: the (simulated) winner's own fanOut
+	// is what delivers the authoritative outcome. An edit here could land
+	// after the winner's and erase it.
+	if len(tg.Sent) != 0 {
+		t.Errorf("tg.Sent = %+v, want no message edits from the losing tap", tg.Sent)
+	}
+}
+
 func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	// Simulates two near-simultaneous taps (one per platform) on the same
 	// retry: the first call's ClaimPendingRetry should win, the second
 	// should see the retry as already claimed and not call GitHub again.
-	h, tg, _, gh, store := newTestHandler(t)
+	h, tg, slack, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
 	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
@@ -506,6 +572,10 @@ func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
 		t.Fatalf("first HandleCallback() error = %v", err)
 	}
+	// The winner's own fanOut already delivered the outcome to Slack too
+	// (fanOut always targets every platform a retry was posted to).
+	slackSentAfterWinner := len(slack.Sent)
+
 	if err := h.HandleCallback(ctx, "", database.PlatformSlack, testSlackChannel, "999.111", id); err != nil {
 		t.Fatalf("second HandleCallback() error = %v", err)
 	}
@@ -513,8 +583,22 @@ func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	if len(gh.RerunCalls) != 1 {
 		t.Fatalf("RerunCalls = %+v, want exactly one — the second tap must not trigger a second rerun", gh.RerunCalls)
 	}
-	if !strings.Contains(tg.Sent[len(tg.Sent)-1].Text, "no longer valid") {
-		t.Errorf("last telegram message should not be the second tap's own success text, want 'no longer valid'; got %q", tg.Sent[len(tg.Sent)-1].Text)
+	// The second (losing) tap must not edit anything at all — the winner's
+	// own fanOut from the first call is the only edit that should exist, and
+	// it must still show the real success outcome, untouched by the loser.
+	if len(tg.Sent) != 1 {
+		t.Fatalf("tg.Sent = %+v, want exactly one edit (the winner's) — the loser must not edit", tg.Sent)
+	}
+	if !strings.Contains(tg.Sent[0].Text, "✅ Retry request sent") {
+		t.Errorf("telegram text = %q, want the winner's success outcome, unclobbered by the loser", tg.Sent[0].Text)
+	}
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("telegram keyboard = %+v, want empty (cleared by the winner)", tg.Sent[0].Params.Keyboard)
+	}
+	// The second tap was itself the Slack platform's callback — confirm it
+	// didn't add a Slack edit of its own on top of the winner's.
+	if len(slack.Sent) != slackSentAfterWinner {
+		t.Errorf("slack.Sent = %+v, want no additional edit from the losing Slack callback (still %d from the winner)", slack.Sent, slackSentAfterWinner)
 	}
 }
 
