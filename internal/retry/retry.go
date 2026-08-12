@@ -45,11 +45,15 @@ type Handler struct {
 	slack       slackbot.Client
 	slackChanID string
 	github      githubapp.Client
-	logger      zerolog.Logger
+	// enabled gates HandleCallback, not just NotifyFailure: a retry record
+	// created before retry was disabled (or one that outlives a toggle) must
+	// not be able to trigger RerunFailedJobs once disabled.
+	enabled bool
+	logger  zerolog.Logger
 }
 
-func New(store database.Repository, tg telegrambot.Client, slack slackbot.Client, slackChanID string, gh githubapp.Client, logger zerolog.Logger) *Handler {
-	return &Handler{store: store, tg: tg, slack: slack, slackChanID: slackChanID, github: gh, logger: logger}
+func New(store database.Repository, tg telegrambot.Client, slack slackbot.Client, slackChanID string, gh githubapp.Client, enabled bool, logger zerolog.Logger) *Handler {
+	return &Handler{store: store, tg: tg, slack: slack, slackChanID: slackChanID, github: gh, enabled: enabled, logger: logger}
 }
 
 // NotifyFailure sends the failure message (with a retry button) to every
@@ -134,6 +138,15 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		_ = h.tg.AnswerCallback(ctx, callbackQueryID, "")
 	}
 
+	if !h.enabled {
+		// Retry is disabled: reject the tap outright rather than looking up
+		// the record, so a pending row created before retry was disabled (or
+		// left over across a toggle) can never reach RerunFailedJobs.
+		h.fanOut(ctx, []database.RetryTarget{{RetryID: retryID, Platform: platform, ChatRef: chatRef, MessageRef: messageRef}},
+			func(database.RetryTarget) string { return "This retry button is no longer valid." }, true)
+		return nil
+	}
+
 	rec, err := h.store.GetRetry(ctx, retryID)
 	if err != nil {
 		return fmt.Errorf("get retry record: %w", err)
@@ -195,6 +208,10 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		if resetToPending {
 			if resetErr := h.store.UpdateRetryStatus(ctx, retryID, database.RetryStatusPending); resetErr != nil {
 				h.logger.Warn().Err(resetErr).Int64("retry_id", retryID).Msg("failed to reset retry status to pending after confirmed rejection")
+				// The record's actual status is still "retried" since the
+				// update didn't take — the button must not be re-attached
+				// for a state that was never actually reached.
+				resetToPending = false
 			}
 		}
 		checkURL := fmt.Sprintf("https://github.com/%s/actions/runs/%d", rec.Repo, rec.RunID)

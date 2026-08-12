@@ -35,7 +35,7 @@ func newTestRetryHandler(t *testing.T) (*retry.Handler, *telegrambottest.FakeCli
 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
-	return retry.New(store, tg, nil, "", gh, zerolog.Nop()), tg, gh
+	return retry.New(store, tg, nil, "", gh, true, zerolog.Nop()), tg, gh
 }
 
 // newTestRetryHandlerBothPlatforms is like newTestRetryHandler but also
@@ -58,7 +58,7 @@ func newTestRetryHandlerBothPlatforms(t *testing.T) (*retry.Handler, *telegrambo
 	tg := telegrambottest.New()
 	slack := slackbottest.New()
 	gh := githubapptest.New()
-	return retry.New(store, tg, slack, "C1", gh, zerolog.Nop()), tg, slack, gh
+	return retry.New(store, tg, slack, "C1", gh, true, zerolog.Nop()), tg, slack, gh
 }
 
 // workflowRunLoader returns a loader with a template that covers all workflow_run actions.
