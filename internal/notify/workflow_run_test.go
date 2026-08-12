@@ -35,7 +35,7 @@ func newTestRetryHandler(t *testing.T) (*retry.Handler, *telegrambottest.FakeCli
 
 	tg := telegrambottest.New()
 	gh := githubapptest.New()
-	return retry.New(store, tg, nil, "", gh, zerolog.Nop()), tg, gh
+	return retry.New(store, tg, nil, "", gh, true, zerolog.Nop()), tg, gh
 }
 
 // newTestRetryHandlerBothPlatforms is like newTestRetryHandler but also
@@ -58,7 +58,7 @@ func newTestRetryHandlerBothPlatforms(t *testing.T) (*retry.Handler, *telegrambo
 	tg := telegrambottest.New()
 	slack := slackbottest.New()
 	gh := githubapptest.New()
-	return retry.New(store, tg, slack, "C1", gh, zerolog.Nop()), tg, slack, gh
+	return retry.New(store, tg, slack, "C1", gh, true, zerolog.Nop()), tg, slack, gh
 }
 
 // workflowRunLoader returns a loader with a template that covers all workflow_run actions.
@@ -150,6 +150,32 @@ func TestWorkflowRunHandlerCompletedFailureDelegatesToRetry(t *testing.T) {
 	}
 	if len(tg.Sent[1].Params.Keyboard) != 1 {
 		t.Errorf("expected the edited message to carry the retry button")
+	}
+}
+
+func TestWorkflowRunHandlerCompletedFailureRetryDisabled(t *testing.T) {
+	tg := telegrambottest.New()
+	h := &workflowRunHandler{destinations: destinations{tg: tg, chatID: 1}, retryDisabled: true, loader: workflowRunLoader(t)}
+	event := unmarshalEvent[github.WorkflowRunEvent](t, `{
+		"action": "completed",
+		"workflow_run": {"id": 55, "name": "CI", "conclusion": "failure", "html_url": "https://github.com/acme/widgets/actions/runs/55"},
+		"repository": {"full_name": "acme/widgets", "name": "widgets", "owner": {"login": "acme"}}
+	}`)
+
+	// retryH is nil, so a nil-pointer call would panic if retryDisabled were
+	// not honored — proving the handler takes the plain-send path instead.
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+
+	if len(tg.Sent) != 1 {
+		t.Fatalf("len(tg.Sent) = %d, want 1 (plain send, no button edit)", len(tg.Sent))
+	}
+	if !strings.Contains(tg.Sent[0].Text, "CI/CD failure") {
+		t.Errorf("text = %q, want it to contain CI/CD failure", tg.Sent[0].Text)
+	}
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want no retry button when retry is disabled", tg.Sent[0].Params.Keyboard)
 	}
 }
 

@@ -54,7 +54,7 @@ func newTestHandlerWithStore(t *testing.T, store database.Repository) (*Handler,
 	tg := telegrambottest.New()
 	slack := slackbottest.New()
 	gh := githubapptest.New()
-	return New(store, tg, slack, testSlackChannel, gh, zerolog.Nop()), tg, slack, gh, store
+	return New(store, tg, slack, testSlackChannel, gh, true, zerolog.Nop()), tg, slack, gh, store
 }
 
 const testTelegramText = `CI/CD failed: <b>Build</b>
@@ -226,6 +226,47 @@ func TestHandleCallbackUnknownRetryID(t *testing.T) {
 	}
 }
 
+func TestHandleCallbackRetryDisabledRejectsPendingRecord(t *testing.T) {
+	_, store := newTestRepo(t)
+	tg := telegrambottest.New()
+	slack := slackbottest.New()
+	gh := githubapptest.New()
+	// enabled: false, with a genuinely pending record already persisted —
+	// e.g. created before retry was disabled, or left over across a toggle.
+	h := New(store, tg, slack, testSlackChannel, gh, false, zerolog.Nop())
+	ctx := context.Background()
+
+	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: testTelegramText}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
+	}
+
+	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	if len(gh.RerunCalls) != 0 {
+		t.Errorf("RerunCalls = %+v, want none — retry is disabled, so a pending record must never reach GitHub", gh.RerunCalls)
+	}
+	if len(tg.Sent) != 1 || !strings.Contains(tg.Sent[0].Text, "no longer valid") {
+		t.Fatalf("tg.Sent = %+v, want a single 'no longer valid' message", tg.Sent)
+	}
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want the button dropped", tg.Sent[0].Params.Keyboard)
+	}
+
+	rec, err := store.GetRetry(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRetry() error = %v", err)
+	}
+	if rec.Status != database.RetryStatusPending {
+		t.Errorf("status = %q, want it left untouched (still pending) — disabled retry rejects the tap without mutating the record", rec.Status)
+	}
+}
+
 func TestHandleCallbackNonPendingStatusFansOutToBothPlatforms(t *testing.T) {
 	h, tg, slack, gh, store := newTestHandler(t)
 	ctx := context.Background()
@@ -294,9 +335,11 @@ func TestHandleCallbackRerunError(t *testing.T) {
 	if !strings.Contains(text, "github.com/acme/widgets/actions/runs/55") {
 		t.Errorf("text = %q, want a link back to the run", text)
 	}
-	// The button must still work (same callback value), since the rerun can be retried.
-	if len(tg.Sent[0].Params.Keyboard) != 1 || tg.Sent[0].Params.Keyboard[0][0].CallbackData == "" {
-		t.Errorf("keyboard = %+v, want the retry button re-attached with a working callback", tg.Sent[0].Params.Keyboard)
+	// Status stays "retried" (not reset to pending) for an ambiguous error, so a
+	// second tap would only hit the "no longer valid" branch — the button must
+	// be dropped rather than left looking usable.
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want the retry button dropped (status wasn't reset to pending)", tg.Sent[0].Params.Keyboard)
 	}
 
 	rec, err := store.GetRetry(ctx, id)
@@ -343,6 +386,49 @@ func TestHandleCallbackRerunConfirmedRejection(t *testing.T) {
 	// A confirmed rejection should reset status to pending so the button can be retried.
 	if rec.Status != database.RetryStatusPending {
 		t.Errorf("status = %q, want pending after confirmed rejection (button can be retried)", rec.Status)
+	}
+}
+
+func TestHandleCallbackRerunNonRetryableRunDropsButton(t *testing.T) {
+	h, tg, _, gh, store := newTestHandler(t)
+	ctx := context.Background()
+
+	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
+	if err != nil {
+		t.Fatalf("CreateRetry() error = %v", err)
+	}
+	if err := store.CreateRetryTarget(ctx, database.RetryTarget{RetryID: id, Platform: database.PlatformTelegram, ChatRef: "1", MessageRef: "2", MessageText: testTelegramText}); err != nil {
+		t.Fatalf("CreateRetryTarget() error = %v", err)
+	}
+	// GitHub returns this 403 when the run was already retried (e.g. manually) —
+	// tapping the button again will always fail the same way.
+	gh.RerunFailedJobsErr = &github.ErrorResponse{
+		Response: &http.Response{StatusCode: http.StatusForbidden},
+		Message:  "This workflow run cannot be retried",
+	}
+
+	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	text := tg.Sent[0].Text
+	if !strings.Contains(text, "This workflow run cannot be retried. Please open the GitHub Action directly.") {
+		t.Errorf("text = %q, want the friendly non-retryable message", text)
+	}
+	if !strings.Contains(text, "github.com/acme/widgets/actions/runs/55") {
+		t.Errorf("text = %q, want a link back to the run", text)
+	}
+	if len(tg.Sent[0].Params.Keyboard) != 0 {
+		t.Errorf("keyboard = %+v, want the retry button dropped (retrying can never succeed)", tg.Sent[0].Params.Keyboard)
+	}
+
+	rec, err := store.GetRetry(ctx, id)
+	if err != nil {
+		t.Fatalf("GetRetry() error = %v", err)
+	}
+	// Must stay "retried", not reset to pending — the run can never be retried again.
+	if rec.Status != database.RetryStatusRetried {
+		t.Errorf("status = %q, want retried (not reset to pending — retrying is permanently unavailable)", rec.Status)
 	}
 }
 

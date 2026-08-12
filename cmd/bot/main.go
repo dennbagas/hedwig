@@ -93,10 +93,10 @@ func run() error {
 	}
 
 	// retry.Handler manages CI/CD failure notifications with inline retry buttons.
-	retryH := retry.New(store, tg, slack, cfg.Slack.ChannelID, gh, logger)
+	retryH := retry.New(store, tg, slack, cfg.Slack.ChannelID, gh, cfg.Retry.Enabled, logger)
 
 	// notify.Dispatcher routes each GitHub event type to its handler using templates loaded from disk.
-	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, slack, cfg.Slack.ChannelID, retryH, cfg.Notifications.TemplatesDir, logger)
+	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, slack, cfg.Slack.ChannelID, retryH, cfg.Retry.Enabled, cfg.Notifications.TemplatesDir, logger)
 	if err != nil {
 		return fmt.Errorf("load notification templates: %w", err)
 	}

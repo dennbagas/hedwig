@@ -33,6 +33,8 @@ func Load(path string) (*Config, error) {
 		// slack.enabled has no entry here — its Go zero value (false) is the
 		// correct opt-in default.
 		"telegram.enabled": true,
+		// retry.enabled has no entry here — its Go zero value (false) is the
+		// correct opt-in default; the retry button must be explicitly enabled.
 	}, "."), nil); err != nil {
 		return nil, fmt.Errorf("load defaults: %w", err)
 	}
