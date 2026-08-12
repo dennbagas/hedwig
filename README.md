@@ -1,14 +1,15 @@
 # Hedwig
 
-A service that bridges GitHub webhooks to Telegram notifications, with a CI/CD retry button for failed workflow runs.
+A service that bridges GitHub webhooks to Telegram and/or Slack notifications, with an optional CI/CD retry button for failed workflow runs.
 
 ## Features
 
-- Relays GitHub events (push, PR, releases, CI/CD status) to a Telegram chat
-- Fully configurable notification templates — one Go `text/template` file per event type, hot-swappable via Kubernetes ConfigMap
-- Retry button on failed CI/CD runs — one tap re-triggers the workflow
+- Relays GitHub events (push, PR, releases, CI/CD status) to Telegram and/or Slack — either channel can be enabled independently
+- Fully configurable notification templates — one Go `text/template` file per event type per platform, hot-swappable via Kubernetes ConfigMap
+- Optional retry button on failed CI/CD runs (`retry.enabled`, opt-in) — one tap re-triggers only the failed jobs; a run that can't be retried (e.g. already retried) shows a clear message instead of a dead button
+- Retrying is idempotent: only one tap ever wins when the same retry has a live button on both platforms, or is double-tapped — GitHub's rerun endpoint is called at most once per retry, and only the winning tap's result is ever shown
 - Deduplicates GitHub webhook retries via delivery ID tracking
-- Single GitHub App identity + single Telegram bot
+- Single GitHub App identity + one bot per enabled channel
 
 ## Supported Events
 
@@ -22,13 +23,13 @@ A service that bridges GitHub webhooks to Telegram notifications, with a CI/CD r
 | PR review comment | `pull_request_review_comment` | Notifies on `created` |
 | Branch created | `create` | Notifies on `branch` type |
 | Release published | `release` | Notifies on `published` |
-| CI/CD completed | `workflow_run` | Notifies on `completed`; attaches retry button on failure |
+| CI/CD completed | `workflow_run` | Notifies on `completed`; attaches a retry button on failure if `retry.enabled: true` |
 
 ## Prerequisites
 
 - Go 1.26+
-- A registered [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with webhook events enabled
-- A Telegram bot (via [@BotFather](https://t.me/BotFather)) with webhook configured
+- A registered GitHub App with webhook events enabled — see [docs/setup/github-app.md](docs/setup/github-app.md)
+- At least one of: a Telegram bot — see [docs/setup/telegram.md](docs/setup/telegram.md) — or a Slack app — see [docs/setup/slack.md](docs/setup/slack.md)
 - A public HTTPS endpoint for receiving webhooks
 
 ## Setup
@@ -43,6 +44,8 @@ go mod download
 cp config.example.yaml config.yaml
 # Edit config.yaml — secrets can also be set via APP_* env vars (see config.example.yaml)
 ```
+
+Getting the actual values for `config.yaml` requires a one-time setup on GitHub's/Telegram's/Slack's side first — see [docs/setup/github-app.md](docs/setup/github-app.md), [docs/setup/telegram.md](docs/setup/telegram.md), and [docs/setup/slack.md](docs/setup/slack.md).
 
 ## Running
 
@@ -92,12 +95,18 @@ Secrets should be set via env vars rather than the file:
 | `APP_GITHUB_WEBHOOK_SECRET` | `github.webhook_secret` |
 | `APP_TELEGRAM_BOT_TOKEN` | `telegram.bot_token` |
 | `APP_TELEGRAM_WEBHOOK_SECRET` | `telegram.webhook_secret` |
+| `APP_SLACK_BOT_TOKEN` | `slack.bot_token` |
+| `APP_SLACK_SIGNING_SECRET` | `slack.signing_secret` |
+
+At least one of `telegram.enabled` / `slack.enabled` must be `true`; either can be enabled independently of the other.
+
+`retry.enabled` (default `false`) controls whether `workflow_run` failures get a "Retry failed jobs" button at all — when disabled, failures are still notified, just as a plain message with no button and no calls to GitHub's rerun API.
 
 See `config.example.yaml` for all available fields.
 
 ## Notification Templates
 
-Each event type has a corresponding `.tmpl` file in the configured templates directory (default: `/etc/hedwig/templates`). Templates are standard Go `text/template` files — they receive a typed context struct and produce the Telegram message text.
+Each event type has a corresponding `.tmpl` file (Telegram) and `.slack.tmpl` file (Slack) in the configured templates directory (default: `/etc/hedwig/templates`) — a platform with no template file for an event simply skips that notification. Templates are standard Go `text/template` files — they receive a typed context struct and produce that platform's message text (HTML for Telegram, mrkdwn for Slack).
 
 Default templates live in [`templates/`](templates/) at the project root. Copy them as a starting point:
 
@@ -113,4 +122,4 @@ A template that produces empty output silently skips the notification, which is 
 {{- end -}}
 ```
 
-All string fields in context structs are pre-HTML-escaped, so templates are safe to use with Telegram's `HTML` parse mode.
+All string fields in context structs are pre-HTML-escaped, so Telegram templates are safe to use with Telegram's `HTML` parse mode. Slack templates use mrkdwn instead — no HTML escaping is needed there, but Slack's own mrkdwn special characters (`&`, `<`, `>`) in dynamic content are escaped by the code paths that need it (e.g. GitHub error messages surfaced by the retry button).

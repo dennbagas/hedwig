@@ -555,7 +555,7 @@ func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	// Simulates two near-simultaneous taps (one per platform) on the same
 	// retry: the first call's ClaimPendingRetry should win, the second
 	// should see the retry as already claimed and not call GitHub again.
-	h, tg, _, gh, store := newTestHandler(t)
+	h, tg, slack, gh, store := newTestHandler(t)
 	ctx := context.Background()
 
 	id, err := store.CreateRetry(ctx, database.CICDRetry{RunID: 55, Repo: "acme/widgets", Status: database.RetryStatusPending})
@@ -572,6 +572,10 @@ func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	if err := h.HandleCallback(ctx, "cbq-1", database.PlatformTelegram, "1", "2", id); err != nil {
 		t.Fatalf("first HandleCallback() error = %v", err)
 	}
+	// The winner's own fanOut already delivered the outcome to Slack too
+	// (fanOut always targets every platform a retry was posted to).
+	slackSentAfterWinner := len(slack.Sent)
+
 	if err := h.HandleCallback(ctx, "", database.PlatformSlack, testSlackChannel, "999.111", id); err != nil {
 		t.Fatalf("second HandleCallback() error = %v", err)
 	}
@@ -590,6 +594,11 @@ func TestHandleCallbackDoubleTapOnlyRerunsOnce(t *testing.T) {
 	}
 	if len(tg.Sent[0].Params.Keyboard) != 0 {
 		t.Errorf("telegram keyboard = %+v, want empty (cleared by the winner)", tg.Sent[0].Params.Keyboard)
+	}
+	// The second tap was itself the Slack platform's callback — confirm it
+	// didn't add a Slack edit of its own on top of the winner's.
+	if len(slack.Sent) != slackSentAfterWinner {
+		t.Errorf("slack.Sent = %+v, want no additional edit from the losing Slack callback (still %d from the winner)", slack.Sent, slackSentAfterWinner)
 	}
 }
 
