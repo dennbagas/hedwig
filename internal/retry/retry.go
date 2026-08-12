@@ -160,30 +160,36 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		return nil
 	}
 
+	if rec.Status != database.RetryStatusPending {
+		// This retry was already resolved by whichever tap actually won —
+		// that call's own fanOut already delivered the real outcome to every
+		// platform and dropped the button there. Editing again here has no
+		// safe guarantee: if the winner's fanOut to some platform is still
+		// in flight, a redundant edit landing after it could erase the real
+		// outcome. Only the winning call may ever edit these messages, so do
+		// nothing.
+		return nil
+	}
+
 	targets, err := h.store.ListRetryTargets(ctx, retryID)
 	if err != nil {
 		return fmt.Errorf("list retry targets: %w", err)
-	}
-	if rec.Status != database.RetryStatusPending {
-		h.fanOut(ctx, targets, func(database.RetryTarget) string {
-			return "This retry button is no longer valid."
-		}, true)
-		return nil
 	}
 
 	// Atomically claim the retry before calling GitHub: the same retry can
 	// have a live button on both Telegram and Slack simultaneously, so two
 	// near-simultaneous taps could otherwise both observe "pending" and
 	// trigger RerunFailedJobs twice. Only the caller that wins the claim
-	// proceeds; a lost race is treated the same as "already handled."
+	// proceeds; a lost race means the winner's own fanOut (for this same
+	// retryID, running concurrently or about to) will shortly update every
+	// platform's message with the authoritative outcome anyway — the loser
+	// must not edit anything here, since its edit could land after the
+	// winner's and silently erase the real result with stale/no-op text.
 	claimed, err := h.store.ClaimPendingRetry(ctx, retryID, database.RetryStatusRetried)
 	if err != nil {
 		return fmt.Errorf("claim pending retry: %w", err)
 	}
 	if !claimed {
-		h.fanOut(ctx, targets, func(database.RetryTarget) string {
-			return "This retry button is no longer valid."
-		}, true)
 		return nil
 	}
 
@@ -216,18 +222,19 @@ func (h *Handler) HandleCallback(ctx context.Context, callbackQueryID, platform,
 		}
 		checkURL := fmt.Sprintf("https://github.com/%s/actions/runs/%d", rec.Repo, rec.RunID)
 		h.fanOut(ctx, targets, func(t database.RetryTarget) string {
+			original := strings.TrimRight(t.MessageText, "\n")
 			if nonRetryable {
 				if t.Platform == database.PlatformSlack {
-					return fmt.Sprintf("This workflow run cannot be retried. Please open the GitHub Action directly.\n<%s|Open GitHub Action>", checkURL)
+					return fmt.Sprintf("%s\n\nThis workflow run cannot be retried. Please open the GitHub Action directly.\n<%s|Open GitHub Action>", original, checkURL)
 				}
-				return fmt.Sprintf("This workflow run cannot be retried. Please open the GitHub Action directly.\n<a href=\"%s\">Open GitHub Action</a>",
-					html.EscapeString(checkURL))
+				return fmt.Sprintf("%s\n\nThis workflow run cannot be retried. Please open the GitHub Action directly.\n<a href=\"%s\">Open GitHub Action</a>",
+					original, html.EscapeString(checkURL))
 			}
 			if t.Platform == database.PlatformSlack {
-				return fmt.Sprintf("Failed to retry: %s\n<%s|Check on GitHub>", escapeSlackMrkdwn(err.Error()), checkURL)
+				return fmt.Sprintf("%s\n\nFailed to retry: %s\n<%s|Check on GitHub>", original, escapeSlackMrkdwn(err.Error()), checkURL)
 			}
-			return fmt.Sprintf("Failed to retry: %s\n<a href=\"%s\">Check on GitHub</a>",
-				html.EscapeString(err.Error()), html.EscapeString(checkURL))
+			return fmt.Sprintf("%s\n\nFailed to retry: %s\n<a href=\"%s\">Check on GitHub</a>",
+				original, html.EscapeString(err.Error()), html.EscapeString(checkURL))
 		}, !resetToPending)
 		return nil
 	}
