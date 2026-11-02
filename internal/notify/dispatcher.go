@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"hedwig/internal/approval"
 	"hedwig/internal/retry"
 	"hedwig/internal/slackbot"
 	"hedwig/internal/telegrambot"
@@ -31,14 +32,14 @@ func newDispatcher(logger zerolog.Logger) *Dispatcher {
 // loaded from templatesDir. Returns an error if any template file fails to
 // parse. tg/slack may be nil when that platform is disabled — every event
 // handler skips a nil platform's send.
-func New(tg telegrambot.Client, chatID int64, slack slackbot.Client, slackChanID string, retryH *retry.Handler, retryEnabled bool, templatesDir string, logger zerolog.Logger) (*Dispatcher, error) {
+func New(tg telegrambot.Client, chatID int64, slack slackbot.Client, slackChanID string, retryH *retry.Handler, retryEnabled bool, approvalH *approval.Handler, templatesDir string, logger zerolog.Logger) (*Dispatcher, error) {
 	templateLoader, err := newTemplateLoader(templatesDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
 	}
 	d := newDispatcher(logger)
 	dest := destinations{tg: tg, chatID: chatID, slack: slack, slackChanID: slackChanID}
-	registerAll(d, dest, retryH, retryEnabled, templateLoader)
+	registerAll(d, dest, retryH, retryEnabled, approvalH, templateLoader)
 	return d, nil
 }
 
@@ -60,12 +61,12 @@ func (d *Dispatcher) Register(eventType string, h EventHandler) {
 	d.handlers[eventType] = h
 }
 
-func registerAll(d *Dispatcher, dest destinations, retryH *retry.Handler, retryEnabled bool, l *templateLoader) {
+func registerAll(d *Dispatcher, dest destinations, retryH *retry.Handler, retryEnabled bool, approvalH *approval.Handler, l *templateLoader) {
 	d.Register("push", &pushHandler{destinations: dest, loader: l})
-	d.Register("pull_request", &pullRequestHandler{destinations: dest, loader: l})
+	d.Register("pull_request", &pullRequestHandler{destinations: dest, loader: l, approvalH: approvalH})
 	d.Register("create", &createHandler{destinations: dest, loader: l})
 	d.Register("issue_comment", &issueCommentHandler{destinations: dest, loader: l})
-	d.Register("pull_request_review", &pullRequestReviewHandler{destinations: dest, loader: l})
+	d.Register("pull_request_review", &pullRequestReviewHandler{destinations: dest, loader: l, approvalH: approvalH})
 	d.Register("pull_request_review_comment", &pullRequestReviewCommentHandler{destinations: dest, loader: l})
 	d.Register("workflow_run", &workflowRunHandler{destinations: dest, retryH: retryH, retryDisabled: !retryEnabled, loader: l})
 	d.Register("release", &releaseHandler{destinations: dest, loader: l})

@@ -9,6 +9,7 @@ type Config struct {
 	Logging       LoggingConfig       `koanf:"logging"`
 	Notifications NotificationsConfig `koanf:"notifications"`
 	Retry         RetryConfig         `koanf:"retry"`
+	Approval      ApprovalConfig      `koanf:"approval"`
 }
 
 type ServerConfig struct {
@@ -64,4 +65,28 @@ type NotificationsConfig struct {
 // messages (no button, no GitHub rerun call) unless explicitly opted in.
 type RetryConfig struct {
 	Enabled bool `koanf:"enabled"`
+}
+
+// ApprovalConfig gates the branch-aware PR approval check. Defaults to
+// disabled (Go zero value). When enabled, Org and Teams/Rules are required;
+// see validateApproval in load.go.
+//
+// Teams maps a role name to a GitHub team slug; Rules maps a base branch to
+// the per-role minimum approval counts, e.g.:
+//
+//	approval:
+//	  enabled: true
+//	  org: btse
+//	  teams:
+//	    developer: developer-team
+//	    infra: infra-team
+//	  rules:
+//	    development: { developer: 1 }
+//	    staging:     { developer: 2 }
+//	    main:        { developer: 2, infra: 1 }
+type ApprovalConfig struct {
+	Enabled bool                      `koanf:"enabled"`
+	Org     string                    `koanf:"org"`
+	Teams   map[string]string         `koanf:"teams"`
+	Rules   map[string]map[string]int `koanf:"rules"`
 }

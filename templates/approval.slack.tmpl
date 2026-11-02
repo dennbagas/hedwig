@@ -1,0 +1,19 @@
+{{- if .Satisfied -}}
+✅ Approval Complete - {{.Base}}
+
+Repository: <https://github.com/{{.Repo}}|{{.Repo}}>
+Title: {{.Title}}
+{{range .Roles}}{{.Role}}: {{.Have}}/{{.Need}}
+{{end}}
+🔗 <{{.URL}}|View Pull Request>
+{{- else -}}
+🔒 Approval Pending - {{.Base}}
+
+Repository: <https://github.com/{{.Repo}}|{{.Repo}}>
+Title: {{.Title}}
+{{range .Roles}}{{if .Met}}✅{{else}}❌{{end}} {{.Role}}: {{.Have}}/{{.Need}}
+{{end}}{{if .Missing}}Still needed: {{.Missing}}
+{{end}}{{if .ChangesRequested}}⛔ Changes requested: {{.ChangesRequested}}
+{{end}}
+🔗 <{{.URL}}|View Pull Request>
+{{- end -}}

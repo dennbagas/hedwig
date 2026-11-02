@@ -37,6 +37,14 @@ type FakeClient struct {
 	CreatePRResult     string
 	CreatePRErr        error
 
+	// Reviews returned by ListPullRequestReviews, and an optional error.
+	Reviews        []githubapp.Review
+	ListReviewsErr error
+	// TeamMembers maps "teamSlug/username" to active membership. Any pair not
+	// present is treated as a non-member (false).
+	TeamMembers     map[string]bool
+	IsTeamMemberErr error
+
 	RerunCalls    []RerunCall
 	CreatePRCalls []CreatePRCall
 }
@@ -75,6 +83,24 @@ func (f *FakeClient) CreatePR(_ context.Context, owner, repo, title, body, head,
 		return "", f.CreatePRErr
 	}
 	return f.CreatePRResult, nil
+}
+
+func (f *FakeClient) ListPullRequestReviews(_ context.Context, _, _ string, _ int) ([]githubapp.Review, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ListReviewsErr != nil {
+		return nil, f.ListReviewsErr
+	}
+	return f.Reviews, nil
+}
+
+func (f *FakeClient) IsTeamMember(_ context.Context, _, teamSlug, username string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.IsTeamMemberErr != nil {
+		return false, f.IsTeamMemberErr
+	}
+	return f.TeamMembers[teamSlug+"/"+username], nil
 }
 
 var _ githubapp.Client = (*FakeClient)(nil)

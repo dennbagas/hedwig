@@ -95,6 +95,26 @@ data:
     # below if Slack is enabled — the button doesn't work without it.
     retry:
       enabled: false
+
+    # Opt-in: post per-branch approval progress to Telegram/Slack. Notification
+    # only — enforcement stays with GitHub branch protection/rulesets. Needs the
+    # GitHub App to have Pull requests: Read and Organization > Members:
+    # Read-only. teams maps a role label to a GitHub team slug; rules maps a
+    # base branch to the per-role minimum approving reviews. Defaults to false.
+    approval:
+      enabled: false
+      org: your-org
+      teams:
+        developer: developer-team
+        infra: infra-team
+      rules:
+        development:
+          developer: 1
+        staging:
+          developer: 2
+        main:
+          developer: 2
+          infra: 1
 ```
 
 ### Notification templates
