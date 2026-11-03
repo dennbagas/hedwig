@@ -35,6 +35,8 @@ GitHub webhook → POST /webhooks/github
             workflow_run failure + retry.enabled → retry.Handler.NotifyFailure
                 → stores one CICDRetry row + one RetryTarget row per enabled platform, attaches inline retry button to each
             workflow_run failure, retry disabled → sent as a plain message, no button, no retry.Handler involvement
+            pull_request / pull_request_review + approval.enabled → approval.Handler.Evaluate
+                → counts current reviews per team role vs the base branch rule, posts a progress message (notification only; no enforcement, no check run)
         → on dispatch failure: database.DeleteDelivery + non-2xx, so GitHub retries
 
 Telegram update → POST /webhooks/telegram
@@ -64,6 +66,7 @@ Background goroutine (30-min interval):
 | `internal/slackbot` | Thin interface over slack-go. Same pattern as githubapp/telegrambot. |
 | `internal/notify` | Strategy + registry: `Dispatcher` maps event-type strings to `EventHandler` implementations. Each event type lives in its own `event_*.go` file alongside its context struct, and renders/sends both platforms' templates via a shared `destinations` helper. Templates are loaded at startup from disk via `templateLoader`. |
 | `internal/retry` | Explicit state machine: `pending → retried \| expired`. One retry can have a live button on both platforms at once; `ClaimPendingRetry`'s atomic conditional UPDATE guarantees GitHub's rerun endpoint is called at most once regardless of tap count/timing, and only the winning tap ever edits any message. |
+| `internal/approval` | Notification-only PR approval tracker (no enforcement). On `pull_request` / `pull_request_review` events it reads the PR's reviews, resolves each approver to configured team roles, counts them against the base branch's rule, and returns a `Result` the notify handlers render into a progress message. Enforcement stays with GitHub branch protection/rulesets (which handle per-team counts and stale-dismissal natively). Stateless — no DB, no check run. |
 | `internal/database` | Repository pattern: `Repository` interface over SQLite (modernc, CGO-free). Migrations run at startup via golang-migrate with embedded SQL files under `migrations/`. |
 | `internal/httpserver` | HTTP routing, middleware (request ID, logging), webhook handlers. |
 | `internal/logging` | zerolog logger; request-scoped via `logging.FromContext(ctx)`. |
@@ -137,3 +140,5 @@ The GitHub App private key is a **file path** in config — parsed and validated
 `telegram.enabled` defaults to `true`, `slack.enabled` defaults to `false` (existing deployments upgrading without setting either field keep notifying Telegram only); `validateChannels` in `internal/config/load.go` rejects a config where both are `false`.
 
 `retry.enabled` defaults to `false` (opt-in). It gates both ends: `notify`'s `workflow_run` handler only calls `retry.Handler.NotifyFailure` (attach a button) when it's `true`, and `retry.Handler` itself carries the same flag so `HandleCallback` rejects any tap outright when it's `false` — this matters because a pending retry row created before a toggle to disabled can otherwise outlive the toggle (up to the 24h sweep TTL) and would still be tappable if only the notify side were gated.
+
+`approval.enabled` defaults to `false` (opt-in). When on, `approval.org`, `approval.teams` (role label → GitHub team slug), and `approval.rules` (base branch → role → min approving reviews) are required; `validateApproval` in `internal/config/load.go` rejects an empty org/rules, a count < 1, or a rule referencing a role missing from `teams`. The `pull_request` / `pull_request_review` handlers call `approval.Handler.Evaluate` on review-affecting actions and post a progress message; a base branch absent from `rules` is silently untracked. On `synchronize` (new commits) the gate re-evaluates but stays quiet in chat to avoid per-push spam. Needs the GitHub App to have **Pull requests: Read** and **Organization → Members: Read-only**; no Checks permission (notification only, no check run).

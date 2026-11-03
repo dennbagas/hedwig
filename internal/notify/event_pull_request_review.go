@@ -2,6 +2,9 @@ package notify
 
 import (
 	"context"
+	"errors"
+
+	"hedwig/internal/approval"
 
 	"github.com/google/go-github/v88/github"
 )
@@ -18,6 +21,8 @@ type PullRequestReviewContext struct {
 type pullRequestReviewHandler struct {
 	destinations
 	loader *templateLoader
+	// approvalH evaluates the branch approval gate; nil when disabled.
+	approvalH *approval.Handler
 }
 
 func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error {
@@ -25,6 +30,10 @@ func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error 
 	if !ok {
 		return nil
 	}
+
+	// Send the per-review notification first, then the approval status, so the
+	// chat shows "PR Review — Approved" above the resulting "Approval ..."
+	// summary (Telegram orders by send time).
 	data := PullRequestReviewContext{
 		Action:   e.GetAction(),
 		PRNumber: e.GetPullRequest().GetNumber(),
@@ -41,8 +50,31 @@ func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error 
 	if err != nil {
 		return err
 	}
-	if telegramText == "" && slackText == "" {
-		return nil
+	var sendErr error
+	if telegramText != "" || slackText != "" {
+		sendErr = h.send(ctx, telegramText, slackText)
 	}
-	return h.send(ctx, telegramText, slackText)
+
+	// A submitted, edited, or dismissed review changes the approval tally, so
+	// re-evaluate the gate and post running progress to chat for each one.
+	var approvalErr error
+	if h.approvalH != nil {
+		switch e.GetAction() {
+		case "submitted", "edited", "dismissed":
+			pr := e.GetPullRequest()
+			res, err := h.approvalH.Evaluate(ctx,
+				e.GetRepo().GetOwner().GetLogin(),
+				e.GetRepo().GetName(),
+				pr.GetBase().GetRef(),
+				pr.GetNumber(),
+			)
+			approvalErr = err
+			if err == nil && res != nil {
+				approvalErr = sendApprovalStatus(ctx, h.destinations, h.loader, res,
+					pr.GetNumber(), pr.GetBase().GetRef(), e.GetRepo().GetFullName(), pr.GetTitle(), pr.GetHTMLURL())
+			}
+		}
+	}
+
+	return errors.Join(sendErr, approvalErr)
 }

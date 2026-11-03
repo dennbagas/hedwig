@@ -88,9 +88,10 @@ func allEventTypesLoader(t *testing.T) *templateLoader {
 func TestRegisterAllWiresEveryEventType(t *testing.T) {
 	tg := telegrambottest.New()
 	d := newDispatcher(zerolog.Nop())
-	// retryH is nil: every event used below takes the workflow_run
-	// "requested" branch, which never touches it.
-	registerAll(d, destinations{tg: tg, chatID: 1}, nil, true, allEventTypesLoader(t))
+	// retryH and approvalH are nil: every event used below takes a branch
+	// that never touches them (workflow_run "requested"; PR actions outside
+	// the approval switch).
+	registerAll(d, destinations{tg: tg, chatID: 1}, nil, true, nil, allEventTypesLoader(t))
 
 	tests := []struct {
 		eventType string

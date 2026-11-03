@@ -55,6 +55,41 @@ func (c *githubClient) CreatePR(ctx context.Context, owner, repo, title, body, h
 	return pr.GetHTMLURL(), nil
 }
 
+func (c *githubClient) ListPullRequestReviews(ctx context.Context, owner, repo string, number int) ([]Review, error) {
+	var reviews []Review
+	opt := &github.ListOptions{PerPage: 100}
+	for {
+		page, resp, err := c.client.PullRequests.ListReviews(ctx, owner, repo, number, opt)
+		if err != nil {
+			return nil, fmt.Errorf("list pull request reviews: %w", err)
+		}
+		for _, r := range page {
+			reviews = append(reviews, Review{
+				User:  r.GetUser().GetLogin(),
+				State: r.GetState(),
+			})
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return reviews, nil
+}
+
+func (c *githubClient) IsTeamMember(ctx context.Context, org, teamSlug, username string) (bool, error) {
+	membership, resp, err := c.client.Teams.GetTeamMembershipBySlug(ctx, org, teamSlug, username)
+	if err != nil {
+		// A user who isn't on the team yields 404 — a normal "no", not a failure.
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("get team membership %s/%s for %s: %w", org, teamSlug, username, err)
+	}
+	// Pending invitations report state "pending"; only "active" counts.
+	return membership.GetState() == "active", nil
+}
+
 func parsePRError(err error, owner, repo, head, base string) error {
 	var ghErr *github.ErrorResponse
 	if !errors.As(err, &ghErr) {
