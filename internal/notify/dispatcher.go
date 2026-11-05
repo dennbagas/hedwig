@@ -65,6 +65,7 @@ func registerAll(d *Dispatcher, dest destinations, retryH *retry.Handler, retryE
 	d.Register("push", &pushHandler{destinations: dest, loader: l})
 	d.Register("pull_request", &pullRequestHandler{destinations: dest, loader: l, approvalH: approvalH})
 	d.Register("create", &createHandler{destinations: dest, loader: l})
+	d.Register("issues", &issuesHandler{destinations: dest, loader: l})
 	d.Register("issue_comment", &issueCommentHandler{destinations: dest, loader: l})
 	d.Register("pull_request_review", &pullRequestReviewHandler{destinations: dest, loader: l, approvalH: approvalH})
 	d.Register("pull_request_review_comment", &pullRequestReviewCommentHandler{destinations: dest, loader: l})

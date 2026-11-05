@@ -324,6 +324,55 @@ func TestIssueCommentHandlerOnPR(t *testing.T) {
 	}
 }
 
+func TestIssuesHandlerOpened(t *testing.T) {
+	tg := telegrambottest.New()
+	loader := mustLoader(t, map[string]string{
+		"issues": `{{.Action}} #{{.Number}} {{.Title}} {{.Body}} {{.Author}} {{.Repo}} {{.Labels}}`,
+	})
+	h := &issuesHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
+	event := unmarshalEvent[github.IssuesEvent](t, `{
+		"action": "opened",
+		"issue": {
+			"number": 42,
+			"title": "Broken <button>",
+			"body": "Details & reproduction",
+			"user": {"login": "alice"},
+			"html_url": "https://github.com/acme/widgets/issues/42",
+			"labels": [{"name": "bug"}, {"name": "urgent"}]
+		},
+		"repository": {"full_name": "acme/widgets"}
+	}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 1 {
+		t.Fatalf("len(tg.Sent) = %d, want 1", len(tg.Sent))
+	}
+	text := tg.Sent[0].Text
+	for _, want := range []string{"opened #42", "Broken &lt;button&gt;", "Details &amp; reproduction", "alice", "acme/widgets", "bug, urgent"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text = %q, want it to contain %q", text, want)
+		}
+	}
+}
+
+func TestIssuesHandlerSkipsUnsupportedAction(t *testing.T) {
+	tg := telegrambottest.New()
+	loader := mustLoader(t, map[string]string{
+		"issues": `{{if eq .Action "opened"}}opened{{end}}`,
+	})
+	h := &issuesHandler{destinations: destinations{tg: tg, chatID: 1}, loader: loader}
+	event := unmarshalEvent[github.IssuesEvent](t, `{"action":"labeled","issue":{"title":"Issue"}}`)
+
+	if err := h.Handle(context.Background(), event); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if len(tg.Sent) != 0 {
+		t.Fatalf("len(tg.Sent) = %d, want 0", len(tg.Sent))
+	}
+}
+
 func TestIssueCommentHandlerOnPlainIssue(t *testing.T) {
 	tg := telegrambottest.New()
 	// Template skips when IsPR is false.
