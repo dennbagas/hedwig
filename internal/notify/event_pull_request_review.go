@@ -62,12 +62,13 @@ func (h *pullRequestReviewHandler) Handle(ctx context.Context, event any) error 
 		switch e.GetAction() {
 		case "submitted", "edited", "dismissed":
 			pr := e.GetPullRequest()
-			res, err := h.approvalH.Evaluate(ctx,
-				e.GetRepo().GetOwner().GetLogin(),
-				e.GetRepo().GetName(),
-				pr.GetBase().GetRef(),
-				pr.GetNumber(),
-			)
+			res, err := h.approvalH.Evaluate(ctx, approval.PR{
+				Owner:   e.GetRepo().GetOwner().GetLogin(),
+				OwnerID: e.GetRepo().GetOwner().GetID(),
+				Repo:    e.GetRepo().GetName(),
+				Base:    pr.GetBase().GetRef(),
+				Number:  pr.GetNumber(),
+			})
 			approvalErr = err
 			if err == nil && res != nil {
 				approvalErr = sendApprovalStatus(ctx, h.destinations, h.loader, res,

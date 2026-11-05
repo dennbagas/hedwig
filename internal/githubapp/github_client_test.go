@@ -218,6 +218,50 @@ func TestCreatePRUnprocessableBaseBranch(t *testing.T) {
 	}
 }
 
+func TestGetBranchApprovalRules(t *testing.T) {
+	c := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/widgets/rules/branches/main" {
+			t.Errorf("path = %q, want /repos/acme/widgets/rules/branches/main", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `[
+			{"type":"deletion"},
+			{"type":"pull_request","parameters":{"required_approving_review_count":1}},
+			{"type":"pull_request","parameters":{"required_approving_review_count":2,
+				"required_reviewers":[
+					{"minimum_approvals":1,"file_patterns":["*"],"reviewer":{"id":42,"type":"Team"}},
+					{"minimum_approvals":0,"reviewer":{"id":43,"type":"Team"}}
+				]}}
+		]`)
+	})
+
+	got, err := c.GetBranchApprovalRules(context.Background(), "acme", "widgets", "main")
+	if err != nil {
+		t.Fatalf("GetBranchApprovalRules() error = %v", err)
+	}
+	if got.RequiredApprovals != 2 {
+		t.Errorf("RequiredApprovals = %d, want the strictest count 2", got.RequiredApprovals)
+	}
+	if len(got.Teams) != 1 || got.Teams[0] != (TeamApprovalRule{TeamID: 42, MinApprovals: 1}) {
+		t.Errorf("Teams = %+v, want only team 42 needing 1", got.Teams)
+	}
+}
+
+func TestGetBranchApprovalRulesNone(t *testing.T) {
+	c := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `[]`)
+	})
+
+	got, err := c.GetBranchApprovalRules(context.Background(), "acme", "widgets", "dev")
+	if err != nil {
+		t.Fatalf("GetBranchApprovalRules() error = %v", err)
+	}
+	if got.RequiredApprovals != 0 || len(got.Teams) != 0 {
+		t.Errorf("GetBranchApprovalRules() = %+v, want zero value", got)
+	}
+}
+
 func TestCreatePRUnprocessableCustomMessage(t *testing.T) {
 	c := newTestGithubClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)

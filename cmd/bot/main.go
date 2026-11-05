@@ -96,13 +96,8 @@ func run() error {
 	// retry.Handler manages CI/CD failure notifications with inline retry buttons.
 	retryH := retry.New(store, tg, slack, cfg.Slack.ChannelID, gh, cfg.Retry.Enabled, logger)
 
-	// approval.Handler gates PRs on per-branch team approval rules via a check run.
-	approvalH := approval.New(gh, approval.Config{
-		Enabled: cfg.Approval.Enabled,
-		Org:     cfg.Approval.Org,
-		Teams:   cfg.Approval.Teams,
-		Rules:   cfg.Approval.Rules,
-	}, logger)
+	// approval.Handler reports PR approval progress against the GitHub rulesets on each base branch.
+	approvalH := approval.New(gh, cfg.Approval.Enabled, logger)
 
 	// notify.Dispatcher routes each GitHub event type to its handler using templates loaded from disk.
 	notifyD, err := notify.New(tg, cfg.Telegram.ChatID, slack, cfg.Slack.ChannelID, retryH, cfg.Retry.Enabled, approvalH, cfg.Notifications.TemplatesDir, logger)

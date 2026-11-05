@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/google/go-github/v88/github"
 )
@@ -88,6 +89,67 @@ func (c *githubClient) IsTeamMember(ctx context.Context, org, teamSlug, username
 	}
 	// Pending invitations report state "pending"; only "active" counts.
 	return membership.GetState() == "active", nil
+}
+
+// branchRule is the subset of a "get rules for a branch" item we need. The
+// response is decoded by hand rather than via go-github's typed rules API so
+// the newer required_reviewers parameter is read regardless of SDK support.
+type branchRule struct {
+	Type       string `json:"type"`
+	Parameters struct {
+		RequiredApprovingReviewCount int `json:"required_approving_review_count"`
+		RequiredReviewers            []struct {
+			MinimumApprovals int `json:"minimum_approvals"`
+			Reviewer         struct {
+				ID   int64  `json:"id"`
+				Type string `json:"type"`
+			} `json:"reviewer"`
+		} `json:"required_reviewers"`
+	} `json:"parameters"`
+}
+
+func (c *githubClient) GetBranchApprovalRules(ctx context.Context, owner, repo, branch string) (BranchApprovalRules, error) {
+	var out BranchApprovalRules
+	page := 1
+	for {
+		u := fmt.Sprintf("repos/%s/%s/rules/branches/%s?per_page=100&page=%d",
+			url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(branch), page)
+		req, err := c.client.NewRequest(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return out, fmt.Errorf("build branch rules request: %w", err)
+		}
+		var rules []branchRule
+		resp, err := c.client.Do(req, &rules)
+		if err != nil {
+			return out, fmt.Errorf("get rules for %s/%s@%s: %w", owner, repo, branch, err)
+		}
+		for _, r := range rules {
+			if r.Type != "pull_request" {
+				continue
+			}
+			if n := r.Parameters.RequiredApprovingReviewCount; n > out.RequiredApprovals {
+				out.RequiredApprovals = n
+			}
+			for _, rr := range r.Parameters.RequiredReviewers {
+				if rr.Reviewer.Type != "Team" || rr.MinimumApprovals < 1 {
+					continue
+				}
+				out.Teams = append(out.Teams, TeamApprovalRule{TeamID: rr.Reviewer.ID, MinApprovals: rr.MinimumApprovals})
+			}
+		}
+		if resp.NextPage == 0 {
+			return out, nil
+		}
+		page = resp.NextPage
+	}
+}
+
+func (c *githubClient) GetTeamSlug(ctx context.Context, orgID, teamID int64) (string, error) {
+	team, _, err := c.client.Teams.GetTeamByID(ctx, orgID, teamID)
+	if err != nil {
+		return "", fmt.Errorf("get team %d: %w", teamID, err)
+	}
+	return team.GetSlug(), nil
 }
 
 func parsePRError(err error, owner, repo, head, base string) error {

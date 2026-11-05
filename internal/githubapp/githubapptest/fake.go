@@ -4,6 +4,7 @@ package githubapptest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -44,6 +45,11 @@ type FakeClient struct {
 	// present is treated as a non-member (false).
 	TeamMembers     map[string]bool
 	IsTeamMemberErr error
+	// BranchRules is returned by GetBranchApprovalRules, with an optional error.
+	BranchRules    githubapp.BranchApprovalRules
+	BranchRulesErr error
+	// TeamSlugs maps team ID to slug for GetTeamSlug; a missing ID is an error.
+	TeamSlugs map[int64]string
 
 	RerunCalls    []RerunCall
 	CreatePRCalls []CreatePRCall
@@ -101,6 +107,22 @@ func (f *FakeClient) IsTeamMember(_ context.Context, _, teamSlug, username strin
 		return false, f.IsTeamMemberErr
 	}
 	return f.TeamMembers[teamSlug+"/"+username], nil
+}
+
+func (f *FakeClient) GetBranchApprovalRules(_ context.Context, _, _, _ string) (githubapp.BranchApprovalRules, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.BranchRules, f.BranchRulesErr
+}
+
+func (f *FakeClient) GetTeamSlug(_ context.Context, _, teamID int64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	slug, ok := f.TeamSlugs[teamID]
+	if !ok {
+		return "", fmt.Errorf("fake: unknown team id %d", teamID)
+	}
+	return slug, nil
 }
 
 var _ githubapp.Client = (*FakeClient)(nil)

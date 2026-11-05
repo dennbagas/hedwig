@@ -67,10 +67,6 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
-	if err := validateApproval(&cfg); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
-
 	if _, err := loadPrivateKey(cfg.GitHub.PrivateKeyPath); err != nil {
 		return nil, fmt.Errorf("parse github private key: %w", err)
 	}
@@ -121,36 +117,6 @@ func validateChannels(cfg *Config) error {
 		}
 	}
 
-	return nil
-}
-
-// validateApproval enforces that, when the approval gate is enabled, the org
-// and at least one rule are set, and every role referenced by a rule has a
-// corresponding team slug. These cross-field checks don't fit struct tags
-// (maps of maps, references between sibling fields), so they're done here.
-func validateApproval(cfg *Config) error {
-	if !cfg.Approval.Enabled {
-		return nil
-	}
-	if cfg.Approval.Org == "" {
-		return fmt.Errorf("approval.org is required when approval.enabled is true")
-	}
-	if len(cfg.Approval.Rules) == 0 {
-		return fmt.Errorf("approval.rules must define at least one branch when approval.enabled is true")
-	}
-	for branch, rule := range cfg.Approval.Rules {
-		if len(rule) == 0 {
-			return fmt.Errorf("approval.rules.%s must require at least one role", branch)
-		}
-		for role, count := range rule {
-			if count < 1 {
-				return fmt.Errorf("approval.rules.%s.%s must be at least 1", branch, role)
-			}
-			if _, ok := cfg.Approval.Teams[role]; !ok {
-				return fmt.Errorf("approval.rules.%s references role %q not defined in approval.teams", branch, role)
-			}
-		}
-	}
 	return nil
 }
 
