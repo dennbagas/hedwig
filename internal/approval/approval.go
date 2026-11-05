@@ -1,24 +1,31 @@
 // Package approval computes a branch-aware view of a pull request's approval
 // progress, for notification purposes only.
 //
-// Enforcement is left entirely to GitHub native branch protection / rulesets,
-// which can require per-team approval counts ("Require review from specific
-// teams" with a per-team Approvals value) and dismiss stale approvals on new
-// commits. This package does not gate merges; it reads the current reviews,
-// resolves each approver to the configured team roles, counts them against the
-// rule for the PR's base branch, and returns a Result so the caller can post a
-// progress message to Telegram/Slack.
+// The requirements are read live from GitHub repository rulesets (including
+// org-level rulesets that target the repo), so nothing is configured in
+// Hedwig: a new repo picks up whatever rulesets apply to it, and a repo/branch
+// with no pull_request rule is simply not tracked. Enforcement stays with
+// GitHub; this package only reads the current reviews, counts them against
+// the active rules for the PR's base branch, and returns a Result so the
+// caller can post a progress message to Telegram/Slack.
 //
-// Two conventions, applied consistently:
+// Two kinds of requirement are tracked:
 //
-//   - Multi-team approvers: an approver counts toward every configured role
-//     they are an active member of. Someone on both developer-team and
-//     infra-team therefore satisfies one slot of each quota at once.
+//   - required_approving_review_count: a plain total of approving reviews,
+//     reported as the "approvals" role.
+//   - required_reviewers: a minimum number of approvals from members of a
+//     specific team, reported under the team's slug.
+//
+// Conventions, applied consistently:
+//
+//   - Multi-team approvers: an approver counts toward every team they are an
+//     active member of.
 //   - Stale approvals: this is stateless and always evaluates the reviews
 //     GitHub reports at call time, taking the latest review per user. When
-//     GitHub's "dismiss stale approvals" setting is on, dismissed reviews are
-//     reported as DISMISSED and drop out of the count automatically. A
-//     standing CHANGES_REQUESTED from any reviewer marks the PR unsatisfied.
+//     "dismiss stale approvals" is on, dismissed reviews drop out of the count
+//     automatically. A standing CHANGES_REQUESTED marks the PR unsatisfied.
+//   - required_reviewers file_patterns are not evaluated: every team rule on
+//     the branch is treated as applying to the PR.
 package approval
 
 import (
@@ -26,47 +33,44 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"hedwig/internal/githubapp"
 
 	"github.com/rs/zerolog"
 )
 
-// Config describes the approval rules mirrored from GitHub for messaging.
-// Teams maps a role name (as used in Rules) to a GitHub team slug within Org.
-// Rules maps a base branch name to the per-role minimum approval counts. A
-// branch absent from Rules is not tracked — Evaluate returns no Result for it.
-type Config struct {
-	Enabled bool
-	Org     string
-	Teams   map[string]string
-	Rules   map[string]map[string]int
-}
+// totalRole labels the plain required_approving_review_count requirement.
+const totalRole = "approvals"
 
 // Handler evaluates approval progress for a pull request.
 type Handler struct {
-	gh     githubapp.Client
-	cfg    Config
-	logger zerolog.Logger
+	gh      githubapp.Client
+	enabled bool
+	logger  zerolog.Logger
+
+	mu        sync.Mutex
+	teamSlugs map[int64]string // team ID → slug; IDs are stable, so cached forever
 }
 
-// New returns a Handler. When cfg.Enabled is false, Evaluate is a no-op.
-func New(gh githubapp.Client, cfg Config, logger zerolog.Logger) *Handler {
-	return &Handler{gh: gh, cfg: cfg, logger: logger}
+// New returns a Handler. When enabled is false, Evaluate is a no-op.
+func New(gh githubapp.Client, enabled bool, logger zerolog.Logger) *Handler {
+	return &Handler{gh: gh, enabled: enabled, logger: logger, teamSlugs: map[int64]string{}}
 }
 
-// RoleStatus is one role's progress toward its required approval count.
+// RoleStatus is one requirement's progress toward its required approval count.
 type RoleStatus struct {
 	Role string
 	Have int
 	Need int
 }
 
-// Met reports whether this role's quota is satisfied.
+// Met reports whether this requirement is satisfied.
 func (r RoleStatus) Met() bool { return r.Have >= r.Need }
 
 // Result is the outcome of an approval evaluation, returned so the caller can
-// render a status notification. Roles is sorted by role name.
+// render a status notification. Roles lists the total requirement first (if
+// any), then team requirements sorted by slug.
 type Result struct {
 	Satisfied        bool
 	Roles            []RoleStatus
@@ -74,55 +78,76 @@ type Result struct {
 }
 
 // Enabled reports whether tracking is active (so callers can skip work early).
-func (h *Handler) Enabled() bool { return h.cfg.Enabled }
+func (h *Handler) Enabled() bool { return h.enabled }
 
-// Evaluate counts the current approvals on the pull request and returns the
-// per-role progress against the base branch's rule.
+// PR identifies the pull request to evaluate.
+type PR struct {
+	Owner   string // repo owner login (the org, for team lookups)
+	OwnerID int64  // repo owner ID, needed to resolve team IDs from rulesets
+	Repo    string
+	Base    string // base branch name
+	Number  int
+}
+
+// Evaluate reads the rulesets active on the PR's base branch, counts the
+// current approvals, and returns per-requirement progress.
 //
-// Returns (nil, nil) when tracking is disabled or no rule exists for
-// baseBranch — in both cases the caller sends no message.
-func (h *Handler) Evaluate(ctx context.Context, owner, repo, baseBranch string, number int) (*Result, error) {
-	if !h.cfg.Enabled {
-		return nil, nil
-	}
-	rule, ok := h.cfg.Rules[baseBranch]
-	if !ok || len(rule) == 0 {
-		h.logger.Debug().Str("base", baseBranch).Msg("approval: branch not tracked, skipping")
+// Returns (nil, nil) when tracking is disabled or no ruleset requires
+// approvals on the base branch — in both cases the caller sends no message.
+func (h *Handler) Evaluate(ctx context.Context, pr PR) (*Result, error) {
+	if !h.enabled {
 		return nil, nil
 	}
 
-	reviews, err := h.gh.ListPullRequestReviews(ctx, owner, repo, number)
+	rules, err := h.gh.GetBranchApprovalRules(ctx, pr.Owner, pr.Repo, pr.Base)
+	if err != nil {
+		return nil, fmt.Errorf("approval: get branch rules: %w", err)
+	}
+	if rules.RequiredApprovals == 0 && len(rules.Teams) == 0 {
+		h.logger.Debug().Str("repo", pr.Owner+"/"+pr.Repo).Str("base", pr.Base).
+			Msg("approval: no ruleset requires approvals, skipping")
+		return nil, nil
+	}
+
+	reviews, err := h.gh.ListPullRequestReviews(ctx, pr.Owner, pr.Repo, pr.Number)
 	if err != nil {
 		return nil, fmt.Errorf("approval: list reviews: %w", err)
 	}
-
 	approvers, changesRequested := latestDecisions(reviews)
 
-	// Count approvals per role, resolving each approver's team memberships
-	// and crediting them toward every role the rule asks for.
-	counts := make(map[string]int, len(rule))
-	for _, user := range approvers {
-		for role := range rule {
-			teamSlug, ok := h.cfg.Teams[role]
-			if !ok {
-				return nil, fmt.Errorf("approval: rule for %q references undefined role %q", baseBranch, role)
-			}
-			member, err := h.gh.IsTeamMember(ctx, h.cfg.Org, teamSlug, user)
+	var roles []RoleStatus
+	if rules.RequiredApprovals > 0 {
+		roles = append(roles, RoleStatus{Role: totalRole, Have: len(approvers), Need: rules.RequiredApprovals})
+	}
+
+	// Several rulesets (or file-pattern entries) can name the same team; the
+	// strictest minimum wins.
+	teamNeed := map[int64]int{}
+	for _, t := range rules.Teams {
+		if t.MinApprovals > teamNeed[t.TeamID] {
+			teamNeed[t.TeamID] = t.MinApprovals
+		}
+	}
+	var teamRoles []RoleStatus
+	for teamID, need := range teamNeed {
+		slug, err := h.teamSlug(ctx, pr.OwnerID, teamID)
+		if err != nil {
+			return nil, fmt.Errorf("approval: resolve team %d: %w", teamID, err)
+		}
+		have := 0
+		for _, user := range approvers {
+			member, err := h.gh.IsTeamMember(ctx, pr.Owner, slug, user)
 			if err != nil {
 				return nil, fmt.Errorf("approval: resolve membership: %w", err)
 			}
 			if member {
-				counts[role]++
+				have++
 			}
 		}
+		teamRoles = append(teamRoles, RoleStatus{Role: slug, Have: have, Need: need})
 	}
-
-	// Build the per-role status sorted by role name for stable output.
-	roles := make([]RoleStatus, 0, len(rule))
-	for role := range rule {
-		roles = append(roles, RoleStatus{Role: role, Have: counts[role], Need: rule[role]})
-	}
-	sort.Slice(roles, func(i, j int) bool { return roles[i].Role < roles[j].Role })
+	sort.Slice(teamRoles, func(i, j int) bool { return teamRoles[i].Role < teamRoles[j].Role })
+	roles = append(roles, teamRoles...)
 
 	satisfied := len(changesRequested) == 0
 	for _, r := range roles {
@@ -132,12 +157,30 @@ func (h *Handler) Evaluate(ctx context.Context, owner, repo, baseBranch string, 
 	}
 
 	h.logger.Info().
-		Str("repo", owner+"/"+repo).
-		Int("pr", number).
-		Str("base", baseBranch).
+		Str("repo", pr.Owner+"/"+pr.Repo).
+		Int("pr", pr.Number).
+		Str("base", pr.Base).
 		Bool("satisfied", satisfied).
 		Msg("approval progress evaluated")
 	return &Result{Satisfied: satisfied, Roles: roles, ChangesRequested: changesRequested}, nil
+}
+
+// teamSlug resolves a ruleset's team ID to its slug, caching the answer.
+func (h *Handler) teamSlug(ctx context.Context, orgID, teamID int64) (string, error) {
+	h.mu.Lock()
+	slug, ok := h.teamSlugs[teamID]
+	h.mu.Unlock()
+	if ok {
+		return slug, nil
+	}
+	slug, err := h.gh.GetTeamSlug(ctx, orgID, teamID)
+	if err != nil {
+		return "", err
+	}
+	h.mu.Lock()
+	h.teamSlugs[teamID] = slug
+	h.mu.Unlock()
+	return slug, nil
 }
 
 // latestDecisions reduces a review list to the set of users whose most recent

@@ -72,12 +72,13 @@ func (h *pullRequestHandler) Handle(ctx context.Context, event any) error {
 	if h.approvalH != nil {
 		switch e.GetAction() {
 		case "opened", "reopened", "synchronize", "ready_for_review", "edited":
-			res, err := h.approvalH.Evaluate(ctx,
-				e.GetRepo().GetOwner().GetLogin(),
-				e.GetRepo().GetName(),
-				pr.GetBase().GetRef(),
-				pr.GetNumber(),
-			)
+			res, err := h.approvalH.Evaluate(ctx, approval.PR{
+				Owner:   e.GetRepo().GetOwner().GetLogin(),
+				OwnerID: e.GetRepo().GetOwner().GetID(),
+				Repo:    e.GetRepo().GetName(),
+				Base:    pr.GetBase().GetRef(),
+				Number:  pr.GetNumber(),
+			})
 			approvalErr = err
 			// Post the status to chat on PR lifecycle changes, but stay quiet
 			// on each push (synchronize) and metadata edit — those still
