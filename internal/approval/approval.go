@@ -12,7 +12,8 @@
 // Two kinds of requirement are tracked:
 //
 //   - required_approving_review_count: a plain total of approving reviews,
-//     reported as the "approvals" role.
+//     reported as the "approvals" role — omitted when a team requirement
+//     already implies it (total <= the largest team minimum).
 //   - required_reviewers: a minimum number of approvals from members of a
 //     specific team, reported under the team's slug.
 //
@@ -115,18 +116,25 @@ func (h *Handler) Evaluate(ctx context.Context, pr PR) (*Result, error) {
 	}
 	approvers, changesRequested := latestDecisions(reviews)
 
-	var roles []RoleStatus
-	if rules.RequiredApprovals > 0 {
-		roles = append(roles, RoleStatus{Role: totalRole, Have: len(approvers), Need: rules.RequiredApprovals})
-	}
-
 	// Several rulesets (or file-pattern entries) can name the same team; the
 	// strictest minimum wins.
 	teamNeed := map[int64]int{}
+	maxTeamNeed := 0
 	for _, t := range rules.Teams {
 		if t.MinApprovals > teamNeed[t.TeamID] {
 			teamNeed[t.TeamID] = t.MinApprovals
 		}
+		if t.MinApprovals > maxTeamNeed {
+			maxTeamNeed = t.MinApprovals
+		}
+	}
+
+	// The total is only worth showing when a team rule doesn't already imply
+	// it: N approvals from one team are N distinct approvers, so a total of
+	// <= the largest team minimum is satisfied whenever that team's is.
+	var roles []RoleStatus
+	if rules.RequiredApprovals > maxTeamNeed {
+		roles = append(roles, RoleStatus{Role: totalRole, Have: len(approvers), Need: rules.RequiredApprovals})
 	}
 	var teamRoles []RoleStatus
 	for teamID, need := range teamNeed {
