@@ -33,7 +33,7 @@ func TestEvaluateNoRulesetSkips(t *testing.T) {
 func TestEvaluateTotalAndTeams(t *testing.T) {
 	gh := githubapptest.New()
 	gh.BranchRules = githubapp.BranchApprovalRules{
-		RequiredApprovals: 2,
+		RequiredApprovals: 3, // more than any team minimum, so it's shown
 		Teams: []githubapp.TeamApprovalRule{
 			{TeamID: 10, MinApprovals: 1},
 			{TeamID: 20, MinApprovals: 1},
@@ -57,7 +57,7 @@ func TestEvaluateTotalAndTeams(t *testing.T) {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
 	want := []RoleStatus{
-		{Role: "approvals", Have: 2, Need: 2},
+		{Role: "approvals", Have: 2, Need: 3},
 		{Role: "developer-team", Have: 2, Need: 2},
 		{Role: "infra-team", Have: 1, Need: 1},
 	}
@@ -69,8 +69,25 @@ func TestEvaluateTotalAndTeams(t *testing.T) {
 			t.Errorf("Roles[%d] = %+v, want %+v", i, res.Roles[i], want[i])
 		}
 	}
-	if !res.Satisfied {
-		t.Error("Satisfied = false, want true")
+	if res.Satisfied {
+		t.Error("Satisfied = true, want false (total 2/3 unmet)")
+	}
+}
+
+func TestEvaluateTotalImpliedByTeamIsHidden(t *testing.T) {
+	gh := githubapptest.New()
+	gh.BranchRules = githubapp.BranchApprovalRules{
+		RequiredApprovals: 1,
+		Teams:             []githubapp.TeamApprovalRule{{TeamID: 20, MinApprovals: 1}},
+	}
+	gh.TeamSlugs = map[int64]string{20: "developer-team"}
+
+	res, err := New(gh, true, zerolog.Nop()).Evaluate(context.Background(), testPR)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if len(res.Roles) != 1 || res.Roles[0] != (RoleStatus{Role: "developer-team", Have: 0, Need: 1}) {
+		t.Errorf("Roles = %+v, want only developer-team 0/1", res.Roles)
 	}
 }
 
