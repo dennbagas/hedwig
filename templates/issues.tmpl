@@ -1,0 +1,27 @@
+{{- if eq .Action "opened" -}}
+📝 New Issues!
+
+Repository: {{.Repo}}
+Issues: {{.Title}}
+Author: {{.Author}}
+
+Description:
+{{.Body}}
+
+🔗 <a href="{{.URL}}">View Issues</a>
+{{- else if eq .Action "reopened" -}}
+🔄 Issues Reopened!
+
+Repository: {{.Repo}}
+Issues: {{.Title}}
+Author: {{.Author}}
+
+🔗 <a href="{{.URL}}">View Issues</a>
+{{- else if eq .Action "closed" -}}
+✅ Issues Closed!
+
+Repository: {{.Repo}}
+Issues: {{.Title}}
+
+🔗 <a href="{{.URL}}">View Issues</a>
+{{- end -}}

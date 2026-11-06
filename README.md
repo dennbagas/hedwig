@@ -23,6 +23,7 @@ A service that bridges GitHub webhooks to Telegram and/or Slack notifications, w
 | PR review comment | `pull_request_review_comment` | Notifies on `created` |
 | Branch created | `create` | Notifies on `branch` type |
 | Release published | `release` | Notifies on `published` |
+| Issues | `issues` | Notifies on `opened`, `reopened`, and `closed` |
 | CI/CD completed | `workflow_run` | Notifies on `completed`; attaches a retry button on failure if `retry.enabled: true` |
 
 ## Prerequisites
@@ -123,4 +124,3 @@ A template that produces empty output silently skips the notification, which is 
 ```
 
 All string fields in context structs are pre-HTML-escaped, so Telegram templates are safe to use with Telegram's `HTML` parse mode. Slack templates use mrkdwn instead — no HTML escaping is needed there, but Slack's own mrkdwn special characters (`&`, `<`, `>`) in dynamic content are escaped by the code paths that need it (e.g. GitHub error messages surfaced by the retry button).
-

@@ -124,7 +124,7 @@ Each file is named `<event_type>.tmpl` and receives its typed context struct. Th
 3. Add a default template at `templates/<event_type>.tmpl`.
 4. The event type string must match what `github.ParseWebHook` returns (e.g. `"push"`, `"workflow_run"`).
 
-Currently registered: `push`, `pull_request`, `create`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `release`.
+Currently registered: `push`, `pull_request`, `issues`, `create`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `release`.
 
 ## Configuration
 

@@ -41,25 +41,13 @@ notifications:
 retry:
   enabled: false
 
-# Opt-in: set approval.enabled: true to post per-branch approval progress to
-# Telegram/Slack. This is notification-only — enforcement stays with GitHub
-# branch protection/rulesets. Requires the GitHub App to have Pull requests:
-# Read and Organization > Members: Read-only. Defaults to false.
+# Opt-in: set approval.enabled: true to post PR approval progress to
+# Telegram/Slack. Notification-only — enforcement stays with GitHub.
 #
-# teams maps a role label to a GitHub team slug within org; rules maps a base
-# branch to the per-role minimum approving reviews. A branch absent from rules
-# is not tracked. An approver counts toward every role they belong to.
+# Requirements are read from the GitHub rulesets (repo- or org-level) active on
+# each PR's base branch: required_approving_review_count and team
+# required_reviewers. New repos are covered automatically; a branch with no
+# pull_request rule is not tracked. Requires the GitHub App to have Pull
+# requests: Read and Organization > Members: Read-only.
 approval:
   enabled: false
-  org: your-org
-  teams:
-    developer: developer-team
-    infra: infra-team
-  rules:
-    development:
-      developer: 1
-    staging:
-      developer: 2
-    main:
-      developer: 2
-      infra: 1
